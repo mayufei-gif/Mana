@@ -14,14 +14,26 @@
 
 ## 标准流程
 
-1. 在本仓库修改源码。
-2. 本地验证。
-3. `git add` / `git commit` / `git push origin main`。
-4. 运行 `tools/deploy_to_ubuntu.ps1`，将 Git 主线版本备份覆盖到 Ubuntu 运行目录。
+1. 先在本地拉取主仓库最新版本：`git fetch origin main`，确认无冲突后 `git pull --ff-only`。
+2. 只在本仓库对应项目目录里修改源码：
+   - `InfoRadar/`：主站、登录、项目入口、InfoRadar 后端和前端。
+   - `NASAgentHub/`：AgentHub 调度协议、任务板、角色状态和共享脚本。
+   - `CourseMindNAS/`：CourseMind NAS 视频字幕学习库源码。
+3. 修改前后都检查 `git status --short`，不要把其他对话正在写的无关文件混进同一次提交。
+4. 本地验证通过后再提交：`git add` / `git commit` / `git push origin main`。
+5. 只有推送到主仓库成功后，才运行 `tools/deploy_to_ubuntu.ps1`，将 Git 主线版本备份覆盖到 Ubuntu 网站运行目录。
+
+## 多 Codex 对话同步规则
+
+- 每个 Codex 对话开始工作前，都必须先同步 `origin/main`，不要基于过期本地文件直接改。
+- 如果另一个对话仍在同步或写入，先等远端 `main` 稳定，再继续提交和部署。
+- 一个对话只负责一个明确项目目录；跨项目共享内容放在同级共享目录或 `NASAgentHub/` 协调文件中。
+- 需要新增功能时，先把缺失功能合进本地 `Mana` 仓库，再推送到 GitHub 主仓库。
+- 不要直接把旧运行目录、`.venv`、备份目录、视频、数据库、缓存、NAS 回传结果或密钥文件整体复制进主线。
+- 如果必须从旧运行目录吸收改动，只导入可版本化源码，并在提交前做敏感信息扫描和差异检查。
 
 如果其他对话仍在旧路径 `G:/E盘/工作项目文件/NAS/InfoRadar` 或 `G:/E盘/工作项目文件/NAS/NASAgentHub` 修改，合并进本仓库前先运行：
 
 ```powershell
 tools/import_live_sources.ps1
 ```
-
