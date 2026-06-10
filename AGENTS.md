@@ -5,6 +5,7 @@
 ## 工作原则
 
 - 默认所有网页、后端、AgentHub 调度台相关改动，都应优先在本仓库完成。
+- 日常工作副本固定为 `G:/E盘/工作项目文件/NAS雷达/Mana`；旧路径只作为导入来源或运行目录，不作为主编辑位置。
 - 不要从旧备份覆盖 `InfoRadar/web/frontend/style.css`、`app.js`、`index.html`。
 - 修改项目卡片样式时，必须保留状态胶囊居中规则：
   - `.project-top { align-items: flex-start; }`
@@ -15,12 +16,12 @@
 ## 标准流程
 
 1. 先在本地拉取主仓库最新版本：`git fetch origin main`，确认无冲突后 `git pull --ff-only`。
-2. 只在本仓库对应项目目录里修改源码：
+2. 优先进入 `G:/E盘/工作项目文件/NAS雷达/Mana` 工作副本，只在本仓库对应项目目录里修改源码：
    - `InfoRadar/`：主站、登录、项目入口、InfoRadar 后端和前端。
    - `NASAgentHub/`：AgentHub 调度协议、任务板、角色状态和共享脚本。
    - `CourseMindNAS/`：CourseMind NAS 视频字幕学习库源码。
 3. 修改前后都检查 `git status --short`，不要把其他对话正在写的无关文件混进同一次提交。
-4. 本地验证通过后再提交：`git add` / `git commit` / `git push origin main`。
+4. 本地验证通过后再提交；若当前在 `nasradar-work` 工作分支，推送主仓库使用 `git push origin HEAD:main`。
 5. 只有推送到主仓库成功后，才运行 `tools/deploy_to_ubuntu.ps1`，将 Git 主线版本备份覆盖到 Ubuntu 网站运行目录。
 
 ## 多 Codex 对话同步规则
