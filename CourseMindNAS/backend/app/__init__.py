@@ -1,0 +1,1 @@
+"""CourseMind NAS backend package."""

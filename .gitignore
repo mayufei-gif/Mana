@@ -25,6 +25,10 @@ NASAgentHub/logs/
 NASAgentHub/secrets/
 NASAgentHub/previews/
 NASAgentHub/workspaces/
+CourseMindNAS/CourseMind/
+CourseMindNAS/storage/
+CourseMindNAS/config/
+CourseMindNAS/frontend/dist/
 
 # Databases and queues
 *.sqlite
@@ -35,9 +39,11 @@ NASAgentHub/workspaces/
 *.bak
 *.bak-*
 *.bak_*
+*.sync-conflict-*
 *.tmp
 *.log
 *.pid
+*sync-conflict*
 *.tar
 *.tar.gz
 *.zip
@@ -48,3 +54,4 @@ Thumbs.db
 .vscode/
 .idea/
 .codex_live_import/
+.codex_coursemind_import/

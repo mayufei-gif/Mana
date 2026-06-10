@@ -1,0 +1,61 @@
+services:
+  backend:
+    image: ugreen/hermes-agent:v1
+    pull_policy: never
+    container_name: coursemind-backend
+    working_dir: /app/backend
+    entrypoint: ["sh", "/app/scripts/ugreen_start_backend.sh"]
+    env_file:
+      - .env
+    ports:
+      - "8766:8000"
+    volumes:
+      - ./backend:/app/backend:ro
+      - ./scripts:/app/scripts:ro
+      - ${HOST_VIDEO_ROOT:-./CourseMind/videos}:/videos:ro
+      - ${HOST_UPLOAD_VIDEO_ROOT:-./CourseMind/upload-videos}:/videos_upload:ro
+      - ${HOST_DATA_DIR:-./CourseMind/data}:/data
+      - ${HOST_PROCESSED_DIR:-./CourseMind/processed}:/processed
+      - ${HOST_LOG_DIR:-./CourseMind/logs}:/logs
+      - ${HOST_CONFIG_DIR:-./CourseMind/config}:/config
+      - coursemind_backend_runtime:/runtime
+    environment:
+      PYTHONDONTWRITEBYTECODE: "1"
+      PIP_INDEX_URL: ${PIP_INDEX_URL:-https://pypi.tuna.tsinghua.edu.cn/simple}
+      VIDEO_ROOT: /videos
+      VIDEO_ROOTS: /videos;/videos_upload
+      NAS_VIDEO_DIR: /videos
+      NAS_VIDEO_DIRS: /videos;/videos_upload
+      COURSEMIND_VIDEO_DIR: /videos
+      COURSEMIND_VIDEO_DIRS: /videos;/videos_upload
+      DATA_DIR: /data
+      PROCESSED_DIR: /processed
+      COURSEMIND_STORAGE_DIR: /processed
+      LOG_DIR: /logs
+      CONFIG_DIR: /config
+      DATABASE_URL: sqlite:////data/coursemind.db
+    restart: unless-stopped
+
+  frontend:
+    image: ugreen/hermes-agent:v1
+    pull_policy: never
+    container_name: coursemind-frontend
+    working_dir: /runtime/frontend-work
+    entrypoint: ["sh", "/app/scripts/ugreen_start_frontend.sh"]
+    ports:
+      - "8788:3000"
+    volumes:
+      - ./frontend:/app/frontend-src:ro
+      - ./scripts:/app/scripts:ro
+      - coursemind_frontend_runtime:/runtime
+    environment:
+      NPM_CONFIG_REGISTRY: ${NPM_CONFIG_REGISTRY:-https://registry.npmmirror.com}
+      VITE_API_BASE: ""
+      VITE_PROXY_TARGET: http://backend:8000
+    depends_on:
+      - backend
+    restart: unless-stopped
+
+volumes:
+  coursemind_backend_runtime:
+  coursemind_frontend_runtime:

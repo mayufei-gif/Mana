@@ -1,0 +1,45 @@
+services:
+  backend:
+    build: ./backend
+    container_name: coursemind-backend
+    env_file:
+      - .env
+    ports:
+      - "8766:8000"
+    volumes:
+      - ${HOST_VIDEO_ROOT:-./CourseMind/videos}:/videos:ro
+      - ${HOST_UPLOAD_VIDEO_ROOT:-./CourseMind/upload-videos}:/videos_upload:ro
+      - ${HOST_DATA_DIR:-./CourseMind/data}:/data
+      - ${HOST_PROCESSED_DIR:-./CourseMind/processed}:/processed
+      - ${HOST_LOG_DIR:-./CourseMind/logs}:/logs
+      - ${HOST_CONFIG_DIR:-./CourseMind/config}:/config
+    environment:
+      VIDEO_ROOT: /videos
+      VIDEO_ROOTS: /videos;/videos_upload
+      NAS_VIDEO_DIR: /videos
+      NAS_VIDEO_DIRS: /videos;/videos_upload
+      COURSEMIND_VIDEO_DIR: /videos
+      COURSEMIND_VIDEO_DIRS: /videos;/videos_upload
+      DATA_DIR: /data
+      PROCESSED_DIR: /processed
+      COURSEMIND_STORAGE_DIR: /processed
+      LOG_DIR: /logs
+      CONFIG_DIR: /config
+      DATABASE_URL: sqlite:////data/coursemind.db
+    restart: unless-stopped
+
+  frontend:
+    image: node:24-alpine
+    container_name: coursemind-frontend
+    working_dir: /app
+    command: sh -c "npm install && npm run dev"
+    ports:
+      - "8788:3000"
+    volumes:
+      - ./frontend:/app
+    depends_on:
+      - backend
+    environment:
+      VITE_API_BASE: ""
+      VITE_PROXY_TARGET: http://backend:8000
+    restart: unless-stopped
