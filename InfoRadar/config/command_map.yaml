@@ -1,0 +1,319 @@
+commands:
+  自由指令:
+    script: scripts/free_command_router.py
+    output_type: free_command
+    need_keyword: true
+    return_summary: true
+    output:
+      - G:\E盘\工作项目文件\NAS回传\FOLO\free_command_results_YYYYMMDD_HHMMSS.xlsx
+      - G:\E盘\工作项目文件\NAS回传\FOLO\free_command_YYYYMMDD_HHMMSS_微信摘要.txt
+    examples:
+      - /ir 找山西晋中理工学院奖学金通知
+      - /ir 查低压电工证报名和补贴
+      - /ir 找PLC变频器维修优质资料
+      - /ir 判断这个PLC课程值不值得买 https://example.com
+      - /find 最近AI自动化工具
+      - /watch 山西晋中理工学院奖学金通知
+      - /collect 公众号 这篇文章讲技能补贴 https://example.com
+      - /deep 第1条
+  生成Folo表格:
+    script: scripts/inforadar_mvp.py
+    output_type: folo_excel
+    need_keyword: false
+    return_summary: true
+    output_dir: G:\E盘\工作项目文件\NAS回传\FOLO
+    examples:
+      - 生成Folo表格 今日
+      - 生成Folo表格 招聘
+      - 生成Folo表格 政策
+      - 生成Folo表格 技术
+      - 生成Folo表格 AI
+      - 生成Folo表格 证书
+      - 生成Folo表格 今日情报
+      - 生成Folo表格 我的学校
+      - 生成Folo表格 学校通知
+      - 生成Folo表格 本地山西
+      - 生成Folo表格 时事热点
+      - 生成Folo表格 国际观察
+      - 生成Folo表格 科技前沿
+      - 生成Folo表格 开源动态
+      - 生成Folo表格 网络安全
+      - 生成Folo表格 购物情报
+      - 生成Folo表格 数码装备
+      - 生成Folo表格 工具软件
+      - 生成Folo表格 付费资源
+      - 生成Folo表格 法律权益
+      - 生成Folo表格 健康医学
+      - 生成Folo表格 财经商业
+      - 生成Folo表格 学习资源
+      - 生成Folo表格 3D打印硬件
+      - 生成Folo表格 生活服务
+      - 生成Folo表格 文化历史
+      - 生成Folo表格 读书影视
+      - 生成Folo表格 游戏娱乐
+      - 生成Folo表格 体育赛事
+      - 生成Folo表格 风险提醒
+      - 生成Folo表格 风险避坑
+      - 生成Folo表格 虚假招聘
+      - 生成Folo表格 培训贷
+      - 生成Folo表格 账号隐私
+      - 生成Folo表格 全域情报
+  推荐订阅源:
+    script: scripts/discover_sources.py
+    output_type: candidate_sources
+    need_keyword: true
+    return_summary: true
+    output: sources/candidate_sources.xlsx
+    extra_outputs:
+      - sources/source_watchlist.xlsx
+    examples:
+      - 推荐订阅源 电工证
+      - 推荐订阅源 山西焦煤
+      - 推荐订阅源 ABB ACS800
+  深度探测订阅源:
+    script: scripts/discover_sources.py
+    output_type: candidate_sources_probe
+    need_keyword: true
+    return_summary: true
+    examples:
+      - 深探源 电工证
+      - 深度探测订阅源 山西焦煤
+  深挖条目:
+    script: scripts/deep_dive_item.py
+    output_type: deep_dive_report
+    need_keyword: true
+    return_summary: true
+    output:
+      - reports/deep_research
+      - G:\E盘\工作项目文件\NAS回传\FOLO
+    examples:
+      - 深挖 第1条
+      - 深挖 1
+      - 深挖 标题关键词
+  生成源池:
+    script: scripts/build_source_pool.py
+    output_type: source_pool
+    need_keyword: false
+    return_summary: true
+    output:
+      - sources/source_pool.xlsx
+      - sources/opml/InfoRadar_source_pool.opml
+    examples:
+      - 生成源池
+      - 生成源池 可加入
+  查看最新结果:
+    script: scripts/read_latest_status.py
+    output_type: status
+    need_keyword: false
+    return_summary: true
+    examples:
+      - 查看最新结果
+  导入Folo数据:
+    script: scripts/import_folo_items.py
+    output_type: normalized_items
+    need_keyword: false
+    return_summary: false
+    input_dirs:
+      - data/raw/folo_export
+      - data/raw/opml
+      - data/raw/rss_items
+      - data/raw/manual_clip
+  导入Folo订阅:
+    script: scripts/import_folo_subscriptions_json.py
+    output_type: folo_source_pool
+    need_keyword: false
+    return_summary: true
+    output:
+      - sources/source_pool_from_folo.xlsx
+      - sources/folo_lists_from_json.xlsx
+      - sources/folo_error_feeds_report.xlsx
+    examples:
+      - 导入Folo订阅
+      - 导入Folo
+      - 真实Folo源池
+      - 同步Folo全域源
+  Folo导入验收:
+    script: scripts/audit_folo_opml_import.py
+    output_type: folo_opml_import_smoke
+    need_keyword: false
+    return_summary: true
+    output:
+      - G:\E盘\工作项目文件\NAS回传\FOLO\all_domain_folo_import_after_status.xlsx
+      - G:\E盘\工作项目文件\NAS回传\FOLO\InfoRadar_MVP2_7_Folo导入后源池状态_YYYYMMDD.md
+      - G:\E盘\工作项目文件\NAS回传\FOLO\mvp2_7_folo_import_smoke_微信摘要.txt
+    examples:
+      - Folo导入验收
+      - 全域源导入验收
+  全域情报验收:
+    script: scripts/audit_latest_all_domain.py
+    output_type: all_domain_quality_audit
+    need_keyword: false
+    return_summary: true
+    output:
+      - G:\E盘\工作项目文件\NAS回传\FOLO\InfoRadar_MVP2_7_全域情报导入后质量验收_YYYYMMDD.md
+      - G:\E盘\工作项目文件\NAS回传\FOLO\mvp2_7_all_domain_quality_微信摘要.txt
+    examples:
+      - 全域情报验收
+  收集:
+    script: scripts/collect_manual_item.py
+    output_type: manual_inbox_item
+    need_keyword: true
+    return_summary: true
+    output:
+      - data/manual_inbox/wechat/manual_items_YYYYMMDD.jsonl
+      - G:\E盘\工作项目文件\NAS回传\FOLO\manual_inbox_微信摘要.txt
+    examples:
+      - 收集 学校 山西晋中理工学院奖学金通知 https://example.com
+      - 收集 公众号 这篇文章讲技能补贴 https://example.com
+      - 收集 购物 淘宝万用表链接 价格59 https://example.com
+      - 收集 付费资源 PLC课程199元，看看值不值得买
+  查看收集箱:
+    script: scripts/view_manual_inbox.py
+    output_type: manual_inbox_summary
+    need_keyword: false
+    return_summary: true
+    output:
+      - G:\E盘\工作项目文件\NAS回传\FOLO\manual_inbox_微信摘要.txt
+    examples:
+      - 查看收集箱
+  处理收集箱:
+    script: scripts/process_manual_inbox.py
+    output_type: manual_collected_items
+    need_keyword: false
+    return_summary: true
+    output:
+      - G:\E盘\工作项目文件\NAS回传\FOLO\manual_collected_items_YYYYMMDD.xlsx
+      - G:\E盘\工作项目文件\NAS回传\FOLO\manual_collected_items_YYYYMMDD.md
+      - G:\E盘\工作项目文件\NAS回传\FOLO\manual_collected_items_YYYYMMDD_微信摘要.txt
+      - data/manual_inbox/processed/manual_processed_YYYYMMDD.jsonl
+    examples:
+      - 处理收集箱
+  查看收集结果:
+    script: scripts/view_manual_results.py
+    output_type: manual_collected_summary
+    need_keyword: false
+    return_summary: true
+    output:
+      - G:\E盘\工作项目文件\NAS回传\FOLO\manual_collected_items_微信摘要.txt
+    examples:
+      - 查看收集结果
+  执行监控:
+    script: scripts/run_watch_tasks.py
+    output_type: watch_run
+    need_keyword: false
+    return_summary: true
+    output:
+      - G:\E盘\工作项目文件\NAS回传\FOLO\watch_updates_YYYYMMDD.xlsx
+      - G:\E盘\工作项目文件\NAS回传\FOLO\watch_report_YYYYMMDD_HHMMSS.md
+      - G:\E盘\工作项目文件\NAS回传\FOLO\watch_report_YYYYMMDD_HHMMSS_微信摘要.txt
+    examples:
+      - 执行监控
+  查看监控:
+    script: scripts/view_watch_status.py
+    output_type: watch_status
+    need_keyword: false
+    return_summary: true
+    output:
+      - G:\E盘\工作项目文件\NAS回传\FOLO\watch_status_微信摘要.txt
+    examples:
+      - 查看监控
+  查看监控更新:
+    script: scripts/view_watch_status.py
+    output_type: watch_updates
+    need_keyword: false
+    return_summary: true
+    output:
+      - G:\E盘\工作项目文件\NAS回传\FOLO\watch_updates_微信摘要.txt
+    examples:
+      - 查看监控更新
+  监控报告:
+    script: scripts/view_watch_status.py
+    output_type: watch_report
+    need_keyword: false
+    return_summary: true
+    output:
+      - G:\E盘\工作项目文件\NAS回传\FOLO\watch_report_微信摘要.txt
+    examples:
+      - 监控报告
+  抓取Folo更新:
+    script: scripts/fetch_rss_items.py
+    output_type: rss_items
+    need_keyword: false
+    return_summary: true
+    output:
+      - data/raw/rss_items/folo_items_real.csv
+    examples:
+      - 抓取Folo更新
+      - 刷新Folo内容
+      - 抓取Folo更新 政策
+  治理RSS源:
+    script: scripts/check_feed_health.py
+    output_type: source_pool_strategy
+    need_keyword: false
+    return_summary: true
+    output:
+      - G:\E盘\工作项目文件\NAS回传\FOLO\RSS源健康检查_YYYYMMDD.xlsx
+      - sources/source_pool_strategy.xlsx
+      - G:\E盘\工作项目文件\NAS回传\FOLO\RSSHub备用与403源治理报告_YYYYMMDD.md
+    examples:
+      - 治理RSS源
+  检查RSSHub:
+    script: scripts/check_rsshub_instances.py
+    output_type: rsshub_instances
+    need_keyword: false
+    return_summary: true
+    output:
+      - G:\E盘\工作项目文件\NAS回传\FOLO\RSSHub实例检查_YYYYMMDD.xlsx
+      - G:\E盘\工作项目文件\NAS回传\FOLO\RSSHub实例检查_YYYYMMDD.md
+    examples:
+      - 检查RSSHub
+      - 检查RSSHub hellogithub/home
+  修复URL异常:
+    script: scripts/check_url_anomalies.py
+    output_type: url_anomaly_report
+    need_keyword: false
+    return_summary: true
+    output:
+      - G:\E盘\工作项目文件\NAS回传\FOLO\URL异常治理报告_YYYYMMDD.md
+    examples:
+      - 修复URL异常
+  扩展全域源池:
+    script: scripts/expand_all_domain_sources.py
+    output_type: all_domain_source_profile
+    need_keyword: false
+    return_summary: true
+    output:
+      - sources/all_domain_source_profile.xlsx
+      - sources/all_domain_candidate_sources.xlsx
+      - G:\E盘\工作项目文件\NAS回传\FOLO\InfoRadar_MVP2_5B_全域源池扩展报告_YYYYMMDD.md
+    examples:
+      - 扩展全域源池
+  核验全域源池:
+    script: scripts/verify_all_domain_sources.py
+    output_type: all_domain_source_verification
+    need_keyword: false
+    return_summary: true
+    output:
+      - G:\E盘\工作项目文件\NAS回传\FOLO\all_domain_folo_import_ready.xlsx
+      - G:\E盘\工作项目文件\NAS回传\FOLO\all_domain_folo_import_ready.opml
+      - G:\E盘\工作项目文件\NAS回传\FOLO\all_domain_manual_review.xlsx
+      - G:\E盘\工作项目文件\NAS回传\FOLO\all_domain_manual_forward_sources.xlsx
+      - G:\E盘\工作项目文件\NAS回传\FOLO\all_domain_disabled_sources.xlsx
+      - G:\E盘\工作项目文件\NAS回传\FOLO\InfoRadar_MVP2_6_全域候选源核验报告_YYYYMMDD.md
+    examples:
+      - 核验全域源池
+      - 生成Folo导入清单
+  记录反馈:
+    script: scripts/feedback_collector.py
+    output_type: feedback_memory
+    need_keyword: false
+    return_summary: true
+    output:
+      - memory/feedback_log.jsonl
+      - memory/preference_memory.jsonl
+      - config/interest_weights.yaml
+    examples:
+      - 这个有用
+      - 这个没用
+      - 以后多关注 PLC
+      - 以后少推 副业

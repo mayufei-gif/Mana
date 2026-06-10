@@ -1,0 +1,907 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <title>Mana Hub</title>
+    <link rel="stylesheet" href="/static/style.css?v=20260610-wechat-rss-view1" />
+    <style>
+      html,
+      body {
+        margin: 0;
+        min-height: 100%;
+      }
+      body {
+        font-family: "Microsoft YaHei", "PingFang SC", system-ui, sans-serif;
+        background: #eef2ef;
+        color: #16211c;
+      }
+      .hidden {
+        display: none !important;
+      }
+      .lock-screen {
+        position: fixed;
+        inset: 0;
+        z-index: 30;
+        display: grid;
+        place-items: center;
+        overflow: hidden;
+        padding: 18px;
+        color: #eef6f2;
+        background:
+          radial-gradient(circle at 16% 18%, rgba(31, 123, 98, 0.32), transparent 30%),
+          radial-gradient(circle at 84% 20%, rgba(35, 96, 148, 0.28), transparent 28%),
+          linear-gradient(180deg, #101816 0%, #0d1412 100%);
+      }
+      .lock-motion {
+        position: absolute;
+        inset: 0;
+        opacity: 0.35;
+        background-image:
+          linear-gradient(transparent 0 95%, rgba(126, 204, 186, 0.5) 95% 100%),
+          linear-gradient(90deg, transparent 0 95%, rgba(126, 204, 186, 0.5) 95% 100%);
+        background-size: 100% 22px, 22px 100%;
+        animation: drift 12s linear infinite;
+      }
+      .unlock-card {
+        position: relative;
+        width: min(640px, calc(100vw - 36px));
+        padding: 28px 22px 22px;
+        border: 1px solid rgba(226, 240, 233, 0.15);
+        border-radius: 18px;
+        background: rgba(13, 19, 17, 0.74);
+        box-shadow: 0 24px 60px rgba(0, 0, 0, 0.34);
+        backdrop-filter: blur(18px);
+      }
+      .portal-mark {
+        width: 48px;
+        height: 48px;
+        border-radius: 14px;
+        display: grid;
+        place-items: center;
+        background: linear-gradient(135deg, #1d735f, #245e93);
+        color: #fff;
+        font-weight: 800;
+        letter-spacing: 0.08em;
+      }
+      .unlock-card h1 {
+        margin: 16px 0 6px;
+        font-size: clamp(34px, 5vw, 56px);
+        line-height: 1;
+      }
+      .unlock-copy {
+        margin: 0 0 18px;
+        color: rgba(232, 243, 238, 0.76);
+      }
+      .unlock-row {
+        display: flex;
+        gap: 10px;
+      }
+      .unlock-fields {
+        display: grid;
+        gap: 10px;
+      }
+      .unlock-row input {
+        flex: 1 1 auto;
+        min-width: 0;
+        border: 1px solid rgba(230, 241, 236, 0.25);
+        border-radius: 10px;
+        padding: 12px 13px;
+      }
+      .unlock-code {
+        width: 100%;
+        box-sizing: border-box;
+        border: 1px solid rgba(230, 241, 236, 0.25);
+        border-radius: 10px;
+        padding: 12px 13px;
+        font-size: 18px;
+        letter-spacing: 0.16em;
+        text-align: center;
+      }
+      .unlock-row button {
+        min-width: 104px;
+        border: 0;
+        border-radius: 10px;
+        background: linear-gradient(135deg, #1d735f, #245e93);
+        color: #fff;
+        font-weight: 800;
+      }
+      @media (max-width: 720px) {
+        .unlock-row {
+          flex-direction: column;
+        }
+        .unlock-row button {
+          min-height: 46px;
+        }
+      }
+      @keyframes drift {
+        to {
+          transform: translate3d(0, 22px, 0);
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <section class="lock-screen" id="lockScreen">
+      <div class="lock-motion" aria-hidden="true">
+        <span></span>
+        <span></span>
+        <span></span>
+      </div>
+      <div class="unlock-card">
+        <div class="portal-mark">MH</div>
+        <p class="eyebrow">Private Console</p>
+        <h1>Mana Hub</h1>
+        <p class="unlock-copy">输入私人口令和 Authenticator 动态码后进入项目门户。</p>
+        <form id="unlockForm" class="unlock-form">
+          <div class="unlock-fields">
+            <label for="unlockPassword">访问口令</label>
+            <div class="unlock-row">
+              <input id="unlockPassword" type="password" autocomplete="current-password" placeholder="WEB_ACCESS_TOKEN" />
+              <button id="unlockBtn" type="submit">解锁</button>
+            </div>
+            <label for="unlockTotp">Authenticator 动态码</label>
+            <input id="unlockTotp" class="unlock-code" type="text" inputmode="numeric" autocomplete="one-time-code" maxlength="6" placeholder="000000" />
+          </div>
+          <div id="unlockError" class="form-error" role="alert"></div>
+        </form>
+        <div class="lock-status" id="lockStatus">正在检查会话</div>
+      </div>
+    </section>
+
+    <div class="app-shell hidden" id="appShell">
+      <div class="header-hover-zone" id="headerHoverZone" aria-hidden="true"></div>
+      <header class="site-header">
+        <div>
+          <p class="eyebrow" id="headerEyebrow">Personal Project Hub</p>
+          <h1 id="headerTitle">Mana Hub</h1>
+          <div class="subline" id="healthLine">连接中</div>
+        </div>
+        <div class="header-actions">
+          <button class="ghost small hidden" id="backHubBtn" type="button">返回</button>
+          <button class="ghost small" id="lockBtn" type="button">锁定</button>
+        </div>
+      </header>
+
+      <main>
+        <div class="hub-view" id="hubView">
+        <section class="hero-band">
+          <div>
+            <p class="eyebrow">Ubuntu Always-on</p>
+            <h2>私人项目入口</h2>
+            <p>当前入口运行在 NAS Ubuntu 虚拟机，通过 Cloudflare Tunnel 映射到域名；项目、角色和任务状态由 AgentHub 文件协议统一调度。</p>
+          </div>
+          <div class="metric-grid">
+            <div>
+              <strong id="projectCount">0</strong>
+              <span>项目位</span>
+            </div>
+            <div>
+              <strong id="onlineCount">0</strong>
+              <span>已上线</span>
+            </div>
+            <div>
+              <strong>8769</strong>
+              <span>本地端口</span>
+            </div>
+          </div>
+        </section>
+
+        <section>
+          <div class="section-heading">
+            <p class="eyebrow">Projects</p>
+            <h2>项目面板</h2>
+          </div>
+          <div class="project-grid" id="projectGrid"></div>
+        </section>
+
+        </div>
+
+        <section class="project-workspace project-detail hidden" id="project-agenthub">
+          <div class="section-heading workspace-heading">
+            <div>
+              <p class="eyebrow">Agent Company</p>
+              <h2>Mana AI 公司总控</h2>
+            </div>
+            <span class="status-pill" id="agentHubRoot">AgentHub</span>
+          </div>
+
+          <section class="agenthub-hero">
+            <div>
+              <p class="eyebrow">Supervisor Console</p>
+              <h3>多 Codex 对话共享调度台</h3>
+              <p>这里负责统一登记项目、分配角色、追踪任务和沉淀交接协议。每个 Codex 对话只在自己的项目目录工作，需要共享的内容写入 NASAgentHub 的 coordination 与 shared 目录。</p>
+            </div>
+            <div class="workspace-actions">
+              <button class="ghost" data-route="hub" type="button">返回项目面板</button>
+              <button data-scroll="#taskBoard" type="button">查看总控任务</button>
+            </div>
+          </section>
+
+          <div class="agenthub-kpi-grid">
+            <div>
+              <strong id="agentProjectCount">0</strong>
+              <span>注册项目</span>
+            </div>
+            <div>
+              <strong id="agentTaskCount">0</strong>
+              <span>任务队列</span>
+            </div>
+            <div>
+              <strong id="agentRoleCount">0</strong>
+              <span>角色席位</span>
+            </div>
+          </div>
+
+          <div class="agenthub-dashboard">
+            <article class="panel">
+              <div class="panel-title">项目注册表</div>
+              <div id="agentHubProjectList" class="stack"></div>
+            </article>
+            <article class="panel">
+              <div class="panel-title">共享路径</div>
+              <div class="path-list">
+                <div><span>Windows</span><code>G:/E盘/工作项目文件/NAS/NASAgentHub</code></div>
+                <div><span>Ubuntu</span><code>/home/mana/NASAgentHub</code></div>
+                <div><span>启动提示词</span><code>shared/templates/STARTUP_PROMPTS.md</code></div>
+              </div>
+            </article>
+          </div>
+
+          <div class="ops-grid agenthub-work-grid">
+            <article class="panel">
+              <div class="panel-title">任务队列</div>
+              <div id="taskBoard" class="stack"></div>
+            </article>
+            <article class="panel">
+              <div class="panel-title">角色状态</div>
+              <div id="agentStatus" class="stack"></div>
+            </article>
+          </div>
+          <article class="panel agent-detail-panel hidden" id="agentDetailPanel">
+            <div class="panel-title">Agent 实时详情</div>
+            <div id="agentDetail" class="stack"></div>
+          </article>
+        </section>
+
+        <section class="project-workspace project-detail hidden" id="project-codex">
+          <div class="section-heading workspace-heading">
+            <div>
+              <p class="eyebrow">Ubuntu Codex Chat</p>
+              <h2>Codex 浏览器对话</h2>
+            </div>
+            <span class="status-pill" id="codexStatusPill">codex exec</span>
+          </div>
+
+          <section class="codex-terminal-shell">
+            <div class="terminal-topbar">
+              <div>
+                <p class="eyebrow">OpenClaw-style workspace</p>
+                <h3>会话 / 对话 / 日志</h3>
+                <p>左侧选择 Codex 会话，中间使用 codex exec 直接对话，右侧查看运行日志。主对话区不再把 tmux 读屏当作聊天窗口。</p>
+              </div>
+              <div class="terminal-actions">
+                <button class="ghost" data-route="hub" type="button">返回项目面板</button>
+                <button id="refreshCodexTerminalBtn" type="button">刷新会话</button>
+              </div>
+            </div>
+
+            <div class="codex-console-layout">
+              <aside class="codex-conversation-rail">
+                <div class="rail-title">对话</div>
+                <button class="conversation-item active" data-codex-session="codex" type="button">
+                  <strong>主 Codex</strong>
+                  <span>codex exec:codex</span>
+                </button>
+                <button class="conversation-item" data-codex-session="codex-research" type="button">
+                  <strong>研究会话</strong>
+                  <span>codex exec:codex-research</span>
+                </button>
+                <button class="conversation-item" data-codex-session="codex-build" type="button">
+                  <strong>构建会话</strong>
+                  <span>codex exec:codex-build</span>
+                </button>
+                <button class="conversation-item" data-codex-session="codex-qa" type="button">
+                  <strong>日志/测试</strong>
+                  <span>codex exec:codex-qa</span>
+                </button>
+              </aside>
+
+              <section class="codex-main-terminal">
+                <pre class="codex-browser-terminal" id="codexTerminalOutput">正在读取 Codex exec 浏览器会话...</pre>
+                <form class="codex-terminal-form" id="codexTerminalForm">
+                  <textarea id="codexTerminalInput" rows="5" placeholder="输入消息后按 Enter 发送，Shift+Enter 换行。"></textarea>
+                  <div class="terminal-form-actions">
+                    <span id="codexTerminalStatus">Enter 发送 · Shift+Enter 换行 · 浏览器直连 Codex exec</span>
+                    <button id="sendCodexTerminalBtn" type="submit">发送给 Codex</button>
+                  </div>
+                </form>
+              </section>
+
+              <aside class="codex-log-rail">
+                <div class="rail-title">日志 / 导出</div>
+                <p class="codex-log-help">聊天缓存用于复盘和任务交接；startup.log 与 tmux 屏幕用于排障。常用资料可在这里一键导出。</p>
+                <div class="codex-log-tabs" id="codexLogTabs"></div>
+                <div class="codex-export-panel" id="codexExportPanel"></div>
+                <pre class="codex-log-output compact" id="codexLogOutput">等待日志</pre>
+              </aside>
+            </div>
+          </section>
+        </section>
+
+        <section class="project-workspace project-detail hidden" id="project-openclaw">
+          <div class="section-heading workspace-heading">
+            <div>
+              <p class="eyebrow">WeChat Command Bridge</p>
+              <h2>OpenClaw 微信命令中心</h2>
+            </div>
+            <span class="status-pill">active</span>
+          </div>
+
+          <section class="codex-hero openclaw-hero">
+            <div>
+              <p class="eyebrow">Command Center</p>
+              <h3>把微信 slash 指令变成可管理任务</h3>
+              <p>这里收纳 `/codexapp*` 指令模板，统一选择 now、queue、hold 策略，并可直接发给浏览器 Codex 会话执行。</p>
+            </div>
+            <div class="workspace-actions">
+              <button class="ghost" data-route="hub" type="button">返回项目面板</button>
+              <button data-scroll="#openclawCommandBuilder" type="button">新建指令</button>
+            </div>
+          </section>
+
+          <div class="agenthub-kpi-grid openclaw-kpi-grid">
+            <div>
+              <strong id="openclawSavedCount">0</strong>
+              <span>快捷指令</span>
+            </div>
+            <div>
+              <strong id="openclawTargetCount">4</strong>
+              <span>Codex App 会话</span>
+            </div>
+            <div>
+              <strong id="openclawPolicyCount">3</strong>
+              <span>调度策略</span>
+            </div>
+          </div>
+
+          <div class="openclaw-command-layout">
+            <article class="panel openclaw-command-builder" id="openclawCommandBuilder">
+              <div class="panel-title">新建快捷指令</div>
+              <form id="openclawCommandForm" class="openclaw-command-form">
+                <div class="openclaw-form-grid">
+                  <label>
+                    <span>名称</span>
+                    <input id="openclawCommandName" type="text" value="主管待定" />
+                  </label>
+                  <label>
+                    <span>微信会话</span>
+                    <select id="openclawTarget">
+                      <option value="codexapp">codexapp</option>
+                      <option value="codexapp1" selected>codexapp1</option>
+                      <option value="codexapp2">codexapp2</option>
+                      <option value="codexapp3">codexapp3</option>
+                    </select>
+                  </label>
+                  <label>
+                    <span>策略</span>
+                    <select id="openclawPolicy">
+                      <option value="hold" selected>hold · 主管待定</option>
+                      <option value="queue">queue · 排队</option>
+                      <option value="now">now · 立即</option>
+                    </select>
+                  </label>
+                  <label>
+                    <span>网页执行会话</span>
+                    <select id="openclawSession">
+                      <option value="codex">主 Codex</option>
+                      <option value="codex-research">研究会话</option>
+                      <option value="codex-build">构建会话</option>
+                      <option value="codex-qa">日志/测试</option>
+                    </select>
+                  </label>
+                </div>
+                <label>
+                  <span>指令内容</span>
+                  <textarea id="openclawPrompt" rows="5">登记这个任务，等我确认后再决定是否排队执行：</textarea>
+                </label>
+                <pre class="openclaw-command-preview" id="openclawCommandPreview">/codexapp1 hold 登记这个任务，等我确认后再决定是否排队执行：</pre>
+                <div class="row-actions">
+                  <button type="submit">保存快捷指令</button>
+                  <button class="ghost" id="openclawCopyCurrentBtn" type="button">复制微信命令</button>
+                  <button id="openclawRunCurrentBtn" type="button">网页执行</button>
+                </div>
+              </form>
+            </article>
+
+            <article class="panel">
+              <div class="panel-title">常用模板</div>
+              <div class="openclaw-template-grid">
+                <button class="ghost" data-openclaw-preset="0" type="button">主管待定</button>
+                <button class="ghost" data-openclaw-preset="1" type="button">排队执行</button>
+                <button class="ghost" data-openclaw-preset="2" type="button">立即测试</button>
+                <button class="ghost" data-openclaw-preset="3" type="button">项目落盘</button>
+              </div>
+              <div class="openclaw-policy-list">
+                <div><strong>hold</strong><span>登记任务，不投递到 Codex App</span></div>
+                <div><strong>queue</strong><span>进入目标会话队列</span></div>
+                <div><strong>now</strong><span>立即尝试，忙时不追加</span></div>
+              </div>
+            </article>
+          </div>
+
+          <div class="ops-grid openclaw-work-grid">
+            <article class="panel">
+              <div class="panel-title">快捷指令</div>
+              <div id="openclawCommandList" class="stack"></div>
+            </article>
+            <article class="panel">
+              <div class="panel-title">执行回显</div>
+              <pre id="openclawCommandResult" class="summary">等待执行</pre>
+            </article>
+          </div>
+        </section>
+
+        <section class="project-workspace active hidden" id="project-inforadar">
+          <div class="section-heading workspace-heading">
+            <div>
+              <p class="eyebrow">Active Project</p>
+              <h2>Folo 信息蜂巢</h2>
+            </div>
+            <span class="status-pill">在线</span>
+          </div>
+
+          <section class="view active" id="view-home">
+            <article class="panel radar-search-panel">
+              <div class="panel-title">Folo 巢式检索</div>
+              <div class="search-layout">
+                <input id="radarSearchInput" type="search" enterkeyhint="search" placeholder="搜索学校通知、AI、政策、购物、风险、源池或文件" />
+                <select id="radarSearchScope" aria-label="检索范围">
+                  <option value="all">全部</option>
+                  <option value="intel">情报</option>
+                  <option value="history">历史</option>
+                  <option value="files">文件</option>
+                  <option value="manual">收集</option>
+                  <option value="watch">监控</option>
+                  <option value="sources">源池</option>
+                </select>
+                <select id="radarSearchMode" aria-label="检索模式">
+                  <option value="smart">智能</option>
+                  <option value="exact">准确</option>
+                  <option value="fuzzy">宽泛</option>
+                </select>
+                <button id="radarSearchBtn" type="button">检索</button>
+              </div>
+              <div class="radar-suggestion-row">
+                <button class="ghost" data-search="我的学校" type="button">我的学校</button>
+                <button class="ghost" data-search="政策" type="button">政策</button>
+                <button class="ghost" data-search="购物" type="button">购物</button>
+                <button class="ghost" data-search="风险提醒" type="button">风险提醒</button>
+                <button class="ghost" data-search="网络安全" type="button">网络安全</button>
+                <button class="ghost" data-search="法律权益" type="button">法律权益</button>
+                <button class="ghost" data-search="AI" type="button">AI</button>
+                <button class="ghost" data-search="奖学金" type="button">奖学金</button>
+              </div>
+              <div id="radarSearchMeta" class="item-meta">输入关键词后检索本地 Folo 蜂巢与池源记录</div>
+              <div id="radarSearchResults" class="search-results"></div>
+            </article>
+
+            <div class="radar-dashboard">
+              <article class="panel">
+                <div class="panel-title">信息寻缘情况 <span id="inspectionIntervalLabel" class="panel-title-sub">等待巡检区间</span></div>
+                <div class="radar-kpi-grid">
+                  <div><strong id="intelCount">0</strong><span>区间搜集卡片</span></div>
+                  <div><strong id="fileCount">0</strong><span>新增信息</span></div>
+                  <div><strong id="inboxCount">0</strong><span>热点候选</span></div>
+                </div>
+                <div id="radarHealth" class="radar-health">正在读取运行状态...</div>
+              </article>
+              <article class="panel manual-hive-panel">
+                <div class="panel-title">手动信息获取站</div>
+                <div class="manual-hive-grid">
+                  <label>
+                    <span>平台类型</span>
+                    <select id="manualHivePlatform">
+                      <option value="公众号">公众号</option>
+                      <option value="快手">快手</option>
+                      <option value="抖音">抖音</option>
+                      <option value="B站">B站</option>
+                      <option value="Twitch">Twitch</option>
+                      <option value="YouTube">YouTube</option>
+                      <option value="TED">TED</option>
+                      <option value="其它">其它</option>
+                    </select>
+                  </label>
+                  <label>
+                    <span>名称检索</span>
+                    <input id="manualHiveName" type="search" placeholder="搜索公众号/账号/频道/作者名称" />
+                  </label>
+                  <label class="manual-hive-url">
+                    <span>URL 检索</span>
+                    <input id="manualHiveUrl" type="url" placeholder="粘贴或搜索该平台下的内容 URL" />
+                  </label>
+                </div>
+                <div class="row-actions">
+                  <button class="ghost" id="manualHiveSearchNameBtn" type="button">搜索名称</button>
+                  <button class="ghost" id="manualHiveSearchUrlBtn" type="button">搜索URL/内容</button>
+                  <button class="ghost" id="manualFeedProbeBtn" type="button">探测RSS/Atom</button>
+                  <button id="manualHiveAddBtn" type="button">加入本次信息寻缘</button>
+                  <button class="ghost" id="manualHiveClearBtn" type="button">清空本地手动项</button>
+                </div>
+                <div id="manualHiveStatus" class="item-meta">当前先记录手动发现的信息源；后续可接入 GitHub 开源采集器扩展平台订阅。</div>
+                <div id="manualHiveList" class="stack compact-stack"></div>
+                <div id="manualFeedProbeStatus" class="item-meta">RSS/Atom 内置适配器可解析公开订阅源，不运行外部代码。</div>
+                <div id="manualFeedProbeList" class="stack compact-stack"></div>
+                <div class="row-actions">
+                  <button class="ghost" id="collectorAdapterDiscoverBtn" type="button">发现当前平台采集器</button>
+                  <button class="ghost" id="collectorAdapterRefreshBtn" type="button">刷新采集器候选</button>
+                </div>
+                <div id="collectorAdapterStatus" class="item-meta">采集器候选只做登记，不自动运行未知仓库代码。</div>
+                <div id="collectorAdapterList" class="stack compact-stack"></div>
+              </article>
+            </div>
+
+            <article class="panel">
+              <div class="panel-title">区间搜集卡片</div>
+              <div id="intelCards" class="intel-list"></div>
+            </article>
+            <article class="panel folo-timeline-panel">
+              <div class="panel-title">Folo 寻源时间线 / 星标列表</div>
+              <div id="foloSourceTimeline" class="folo-timeline"></div>
+              <div id="starCardList" class="star-card-list"></div>
+            </article>
+            <article class="panel resource-appreciation-panel">
+              <div class="panel-title">全网资源鉴赏</div>
+              <div class="resource-discovery-grid">
+                <input id="resourceHiveQuery" type="search" placeholder="输入资源关键词，例如：AI agents archive / 电工证题库 / 解密档案" />
+                <button id="resourceHiveDiscoverBtn" type="button">搜索候选</button>
+                <button class="ghost" id="resourceHiveAutoAddBtn" type="button">搜索并入池</button>
+                <button class="ghost" id="resourceHiveBatchBtn" type="button">预设巡检</button>
+                <button class="ghost" id="resourceHiveBatchAutoAddBtn" type="button">巡检并入池</button>
+              </div>
+              <div id="resourceHiveCandidates" class="stack compact-stack resource-candidate-list"></div>
+              <div class="resource-hive-grid">
+                <select id="resourceHiveType" aria-label="资源类型">
+                  <option value="书籍">书籍</option>
+                  <option value="解密档案">解密档案</option>
+                  <option value="题库">题库</option>
+                  <option value="软件包">软件包</option>
+                  <option value="论文/报告">论文/报告</option>
+                  <option value="其它资源">其它资源</option>
+                </select>
+                <input id="resourceHiveName" type="search" placeholder="记录古今中外书籍、档案、题库或软件包名称" />
+                <input id="resourceHiveLink" type="url" placeholder="资源线索链接或 NAS 归档链接" />
+                <button id="resourceHiveAddBtn" type="button">放入池源</button>
+              </div>
+              <div id="resourceHiveStatus" class="item-meta">全网自动搜索和 NAS 自动归档属于后续自动化；当前先沉淀候选资源名、链接和分类。</div>
+              <div class="resource-hive-export">
+                <button class="ghost" id="resourceHiveRefreshBtn" type="button">刷新池源</button>
+                <button class="ghost" id="resourceArchivePlanBtn" type="button">生成NAS归档计划</button>
+                <button class="ghost" id="resourceArchiveLinksBtn" type="button">写入NAS链接</button>
+                <button class="ghost" id="resourceDownloadApprovedBtn" type="button">下载已批准</button>
+                <a class="button-link secondary" href="/api/resource-hive/export?format=md" target="_blank" rel="noreferrer">导出 MD</a>
+                <a class="button-link secondary" href="/api/resource-hive/export?format=jsonl" target="_blank" rel="noreferrer">导出 JSONL</a>
+              </div>
+              <div id="resourceArchivePlanStatus" class="item-meta">归档计划只生成建议路径，不自动下载版权或来源未确认的文件。</div>
+              <div id="resourceArchivePlanList" class="stack compact-stack"></div>
+              <div id="resourceHiveList" class="stack compact-stack"></div>
+            </article>
+            <article class="panel">
+              <div class="panel-title">池源新增记录</div>
+              <div id="homeFiles" class="file-list"></div>
+            </article>
+          </section>
+
+          <section class="view" id="view-command">
+            <article class="panel">
+              <div class="panel-title">自由指令</div>
+              <textarea id="commandInput" rows="4" placeholder="/ir 找山西晋中理工学院奖学金通知"></textarea>
+              <div class="row-actions">
+                <button id="runCommandBtn" type="button">执行</button>
+                <button class="ghost" data-command="最新结果" type="button">最新结果</button>
+              </div>
+            </article>
+            <article class="panel">
+              <div class="panel-title">执行结果</div>
+              <pre id="commandResult" class="summary">等待执行</pre>
+            </article>
+          </section>
+
+          <section class="view" id="view-inbox">
+            <article class="panel">
+              <div class="panel-title">收集</div>
+              <select id="collectPlatform">
+                <option value="学校">学校</option>
+                <option value="公众号">公众号</option>
+                <option value="购物">购物</option>
+                <option value="付费资源">付费资源</option>
+                <option value="其他">其他</option>
+              </select>
+              <textarea id="collectText" rows="5" placeholder="粘贴链接、通知、商品、课程或线索"></textarea>
+              <div class="row-actions">
+                <button id="collectBtn" type="button">收集</button>
+                <button class="ghost" data-command="查看收集箱" type="button">查看收集箱</button>
+                <button class="ghost" data-command="处理收集箱" type="button">处理</button>
+              </div>
+            </article>
+            <article class="panel">
+              <div class="panel-title">收集箱</div>
+              <div id="manualInbox" class="stack"></div>
+            </article>
+          </section>
+
+          <section class="view" id="view-watch">
+            <article class="panel">
+              <div class="panel-title">监控</div>
+              <input id="watchInput" type="text" placeholder="山西晋中理工学院奖学金通知" />
+              <div class="row-actions">
+                <button id="watchAddBtn" type="button">添加监控</button>
+                <button class="ghost" data-command="执行监控" type="button">执行监控</button>
+              </div>
+              <div class="row-actions">
+                <button class="ghost" data-command="查看监控" type="button">查看监控</button>
+                <button class="ghost" data-command="查看监控更新" type="button">查看更新</button>
+                <button class="ghost" data-command="监控报告" type="button">报告</button>
+              </div>
+            </article>
+            <article class="panel">
+              <div class="panel-title">监控状态</div>
+              <div id="watchStatus" class="stack"></div>
+            </article>
+          </section>
+
+          <section class="view" id="view-sources">
+            <article class="panel">
+              <div class="panel-title">源池</div>
+              <div class="row-actions">
+                <button data-command="同步Folo全域源" type="button">同步Folo源池</button>
+                <button class="ghost" data-command="生成源池" type="button">生成OPML</button>
+                <button class="ghost" data-command="Folo导入验收" type="button">导入验收</button>
+              </div>
+              <div class="row-actions">
+                <button data-command="抓取Folo更新" type="button">抓取Folo更新</button>
+                <button class="ghost" data-command="扩展全域源池" type="button">扩展全域源池</button>
+                <button data-command="治理Folo直查源" type="button">治理Folo直查源</button>
+                <button class="ghost" data-command="检查Folo源桥" type="button">检查Folo源桥</button>
+              </div>
+              <div id="sourcePool" class="source-console"></div>
+            </article>
+          </section>
+
+          <section class="view" id="view-files">
+            <article class="panel">
+              <div class="panel-title">文件</div>
+              <div id="allFiles" class="file-list"></div>
+            </article>
+          </section>
+        </section>
+      </main>
+
+      <article class="panel locator-panel hidden" id="locatorPanel">
+        <div class="locator-head">
+          <div>
+            <p class="eyebrow">Locate Evidence</p>
+            <div class="panel-title">定位证据</div>
+          </div>
+          <button class="ghost small" id="locatorCloseBtn" type="button">关闭</button>
+        </div>
+        <div id="locatorDetail" class="locator-detail"></div>
+      </article>
+
+      <nav class="tabs">
+        <button class="active" data-view="home" type="button">首页</button>
+        <button data-view="command" type="button">指令</button>
+        <button data-view="inbox" type="button">收集</button>
+        <button data-view="watch" type="button">监控</button>
+        <button data-view="sources" type="button">源池</button>
+        <button data-view="files" type="button">文件</button>
+      </nav>
+    </div>
+
+    <div id="toast" class="toast hidden"></div>
+    <script src="/static/app.js?v=20260610-wechat-rss-view1"></script>
+    <script>
+      (() => {
+        const POLL_MS = 100;
+        const MAX_FOLLOW_MS = 10 * 60 * 1000;
+        let followToken = "";
+
+        const $ = (selector) => document.querySelector(selector);
+        const doneStates = new Set(["done", "error", "timeout"]);
+
+        function currentSession() {
+          return $(".conversation-item.active[data-codex-session]")?.dataset.codexSession || "codex";
+        }
+
+        function setStatus(message) {
+          const status = $("#codexTerminalStatus");
+          if (status) status.textContent = message;
+        }
+
+        function renderTerminal(payload) {
+          const output = $("#codexTerminalOutput");
+          if (output) {
+            output.textContent = payload?.output || payload?.error || "Codex 暂无可显示输出。";
+            output.scrollTop = output.scrollHeight;
+          }
+          const session = payload?.session || currentSession();
+          const jobStatus = payload?.job_status ? ` · ${payload.job_status}` : "";
+          setStatus(`浏览器直连 Codex exec:${session}${jobStatus}`);
+        }
+
+        async function api(path, options = {}) {
+          const res = await fetch(path, {
+            credentials: "same-origin",
+            ...options,
+            headers: { "Content-Type": "application/json", ...(options.headers || {}) },
+          });
+          if (!res.ok) {
+            const text = await res.text();
+            throw new Error(text || `HTTP ${res.status}`);
+          }
+          return res.json();
+        }
+
+        function stopFollow() {
+          followToken = "";
+        }
+
+        function followJob(jobId, session) {
+          const token = `${Date.now()}-${Math.random().toString(16).slice(2)}`;
+          const deadline = Date.now() + MAX_FOLLOW_MS;
+          followToken = token;
+
+          const tick = async () => {
+            if (followToken !== token) return;
+            if (Date.now() > deadline) {
+              stopFollow();
+              setStatus("Codex 回复等待超时，可点刷新会话查看最新状态");
+              return;
+            }
+            try {
+              const params = new URLSearchParams({ session });
+              const data = await api(`/api/codex-terminal/job/${encodeURIComponent(jobId)}?${params.toString()}`);
+              renderTerminal(data);
+              if (doneStates.has(String(data?.job_status || ""))) {
+                stopFollow();
+                return;
+              }
+              window.setTimeout(tick, POLL_MS);
+            } catch (err) {
+              stopFollow();
+              setStatus(`读取 Codex 回复失败：${err.message}`);
+            }
+          };
+
+          window.setTimeout(tick, POLL_MS);
+        }
+
+        async function sendFromBrowser() {
+          const input = $("#codexTerminalInput");
+          const button = $("#sendCodexTerminalBtn");
+          const message = String(input?.value || "").trim();
+          if (!message) {
+            setStatus("消息不能为空");
+            return;
+          }
+          stopFollow();
+          const session = currentSession();
+          if (button) button.disabled = true;
+          setStatus(`正在发送到 Codex exec:${session}...`);
+          try {
+            const data = await api("/api/codex-terminal/send", {
+              method: "POST",
+              body: JSON.stringify({ session, message }),
+            });
+            if (input) input.value = "";
+            renderTerminal(data);
+            if (data?.job_id && !doneStates.has(String(data?.job_status || ""))) {
+              followJob(data.job_id, data.session || session);
+            }
+          } catch (err) {
+            setStatus(`发送失败：${err.message}`);
+          } finally {
+            if (button) button.disabled = false;
+          }
+        }
+
+        document.addEventListener(
+          "click",
+          (event) => {
+            if (!event.target?.closest?.("#sendCodexTerminalBtn")) return;
+            event.preventDefault();
+            event.stopImmediatePropagation();
+            sendFromBrowser();
+          },
+          true
+        );
+
+        document.addEventListener(
+          "submit",
+          (event) => {
+            if (event.target?.id !== "codexTerminalForm") return;
+            event.preventDefault();
+            event.stopImmediatePropagation();
+            sendFromBrowser();
+          },
+          true
+        );
+
+        document.addEventListener(
+          "keydown",
+          (event) => {
+            if (event.target?.id !== "codexTerminalInput" || event.key !== "Enter" || event.shiftKey) return;
+            event.preventDefault();
+            event.stopImmediatePropagation();
+            sendFromBrowser();
+          },
+          true
+        );
+
+        window.__codexBrowserDirectSend = { send: sendFromBrowser, stop: stopFollow };
+        setStatus("浏览器直连发送器已加载 · Enter 发送 · Shift+Enter 换行");
+      })();
+    </script>
+    <script>
+      (() => {
+        let collapseTimer = null;
+
+        function shell() {
+          return document.querySelector("#appShell");
+        }
+
+        function expandHeader() {
+          const appShell = shell();
+          if (!appShell || appShell.classList.contains("hidden")) return;
+          window.clearTimeout(collapseTimer);
+          collapseTimer = null;
+          appShell.classList.remove("header-collapsed");
+        }
+
+        function collapseHeader(delay = 650) {
+          const appShell = shell();
+          if (!appShell || appShell.classList.contains("hidden")) return;
+          window.clearTimeout(collapseTimer);
+          collapseTimer = window.setTimeout(() => {
+            appShell.classList.add("header-collapsed");
+            collapseTimer = null;
+          }, delay);
+        }
+
+        function bindHeaderDrawerFallback() {
+          const header = document.querySelector(".site-header");
+          const zone = document.querySelector("#headerHoverZone");
+          if (!header || !zone) return;
+
+          const open = () => expandHeader();
+          const close = () => collapseHeader(520);
+          header.addEventListener("mouseenter", open);
+          header.addEventListener("mouseleave", close);
+          zone.addEventListener("mouseenter", open);
+          zone.addEventListener("mouseleave", close);
+          header.addEventListener("focusin", open);
+          header.addEventListener("focusout", close);
+          document.addEventListener("mousemove", (event) => {
+            if (event.clientY <= 34) {
+              open();
+            } else if (event.clientY > 180) {
+              collapseHeader(520);
+            }
+          });
+
+          const observer = new MutationObserver(() => {
+            if (!shell()?.classList.contains("hidden")) collapseHeader(1600);
+          });
+          observer.observe(shell(), { attributes: true, attributeFilter: ["class"] });
+          collapseHeader(1600);
+        }
+
+        if (document.readyState === "loading") {
+          document.addEventListener("DOMContentLoaded", bindHeaderDrawerFallback);
+        } else {
+          bindHeaderDrawerFallback();
+        }
+      })();
+    </script>
+  </body>
+</html>

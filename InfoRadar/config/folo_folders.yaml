@@ -1,0 +1,41 @@
+folders:
+  - path: 就业招聘/山西本地
+    keywords: [山西, 太原, 长治, 忻州, 招聘, 就业, 实习, 校招]
+  - path: 就业招聘/国企矿山
+    keywords: [山西焦煤, 霍州煤电, 晋能控股, 潞安化工, 矿山, 煤矿, 国企]
+  - path: 就业招聘/电气自动化
+    keywords: [电气, 自动化, PLC, 设备维修, 售后技术, 技术员]
+  - path: 政策证书/电工证
+    keywords: [电工证, 低压电工, 高压电工, 特种作业]
+  - path: 政策证书/技能补贴
+    keywords: [技能补贴, 就业补贴, 职业技能, 补贴申领]
+  - path: 政策证书/职业技能等级
+    keywords: [职业技能等级, 技能等级, 职业资格, 等级认定]
+  - path: 政策证书/学校通知
+    keywords: [山西机电, 学校, 教务, 毕业, 实习材料, 校园招聘]
+  - path: 技术学习/PLC
+    keywords: [PLC, 西门子, 三菱, 汇川, 梯形图]
+  - path: 技术学习/变频器
+    keywords: [变频器, ACS800, ACS880, ABB, 故障代码, 参数设置]
+  - path: 技术学习/工业机器人
+    keywords: [工业机器人, 机器人运维, ABB机器人, 发那科, 安川]
+  - path: 技术学习/AutoCAD_EPLAN
+    keywords: [AutoCAD, CAD, EPLAN, 电气图, 制图]
+  - path: 技术学习/电气维修
+    keywords: [电气维修, 控制柜, 控制箱, 电路板, 矿用开关]
+  - path: AI工具/Codex
+    keywords: [Codex, ChatGPT, OpenAI, agent, AI编程]
+  - path: AI工具/OpenClaw
+    keywords: [OpenClaw, 微信指令, 微信自动化, gateway]
+  - path: AI工具/NAS自动化
+    keywords: [NAS, Tailscale, RustDesk, 远程控制, 自动化]
+  - path: AI工具/Folo_RSS
+    keywords: [Folo, Follow, RSS, OPML, RSSHub, Miniflux, FreshRSS]
+  - path: 个人项目/3D打印
+    keywords: [3D打印, 建模, 打印机, 创客]
+  - path: 个人项目/低成本项目
+    keywords: [低成本项目, 个人项目, 接单, 作品集]
+  - path: 长期观察/行业趋势
+    keywords: [智能制造, 工业互联网, 趋势, 产业升级]
+  - path: 长期观察/风险提醒
+    keywords: [风险, 避坑, 营销, 夸大, 骗局]

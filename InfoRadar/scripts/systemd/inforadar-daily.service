@@ -1,0 +1,11 @@
+[Unit]
+Description=InfoRadar daily automation
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+Type=oneshot
+User=mana
+WorkingDirectory=/home/mana/InfoRadar
+EnvironmentFile=/home/mana/inforadar-runtime/inforadar-web.env
+ExecStart=/home/mana/inforadar-runtime/venv/bin/python /home/mana/InfoRadar/scripts/run_daily_automation.py

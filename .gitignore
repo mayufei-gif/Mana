@@ -1,0 +1,48 @@
+# Runtime / secrets
+*.env
+.env
+.env.*
+*token*
+*secret*
+*cookie*
+*credential*
+*password*
+*auth*
+secrets/
+
+# Python / node caches
+__pycache__/
+*.py[cod]
+.pytest_cache/
+node_modules/
+
+# Runtime data and generated output
+InfoRadar/data/
+InfoRadar/logs/
+InfoRadar/reports/
+InfoRadar/memory/
+NASAgentHub/logs/
+NASAgentHub/secrets/
+NASAgentHub/previews/
+NASAgentHub/workspaces/
+
+# Databases and queues
+*.sqlite
+*.sqlite3
+*.db
+
+# Backups / temp
+*.bak
+*.bak-*
+*.tmp
+*.log
+*.pid
+*.tar
+*.tar.gz
+*.zip
+
+# OS / editor
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/

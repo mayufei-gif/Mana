@@ -1,0 +1,43 @@
+{
+  "version": "1.0",
+  "updated_at": "2026-06-06T10:57:49+08:00",
+  "max_age_seconds": 300,
+  "items": [
+    {
+      "agent_id": "codex-app1",
+      "heartbeat_at": "2026-06-06T10:57:49+08:00",
+      "source": "codex_app_monitor",
+      "current_thread": "微信直连codex app1",
+      "thread_id": "019e7c0b-b572-7832-812a-dc4570506d28",
+      "thread_updated_at": "2026-06-05T23:15:21+08:00",
+      "note": "请回复“app1会话正常”"
+    },
+    {
+      "agent_id": "codex-app2",
+      "heartbeat_at": "2026-06-06T10:57:49+08:00",
+      "source": "codex_app_monitor",
+      "current_thread": "微信直连codex app2",
+      "thread_id": "019e9002-bcd3-7ad1-a0a1-ddaefa33fd68",
+      "thread_updated_at": "2026-06-06T09:38:46+08:00",
+      "note": "空闲着吗"
+    },
+    {
+      "agent_id": "codex-app3",
+      "heartbeat_at": "2026-06-06T10:57:49+08:00",
+      "source": "codex_app_monitor",
+      "current_thread": "微信直连codex app3",
+      "thread_id": "019e8cd8-081b-79c2-8af7-e68e0fec52cd",
+      "thread_updated_at": "2026-06-06T09:36:05+08:00",
+      "note": "请只回复 CODEXAPP3_OK"
+    },
+    {
+      "agent_id": "codex-main",
+      "heartbeat_at": "2026-06-06T10:57:49+08:00",
+      "source": "codex_app_monitor",
+      "current_thread": "微信直连codex app2",
+      "thread_id": "019e9002-bcd3-7ad1-a0a1-ddaefa33fd68",
+      "thread_updated_at": "2026-06-06T09:38:46+08:00",
+      "note": "空闲着吗"
+    }
+  ]
+}

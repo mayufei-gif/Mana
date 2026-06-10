@@ -1,0 +1,133 @@
+{
+  "version": "1.0",
+  "updated_at": "2026-06-07T18:01:39+08:00",
+  "items": [
+    {
+      "task_id": "T-DEMO-001",
+      "title": "编写 AgentHub 使用说明草稿",
+      "project_id": "AgentHub",
+      "owner_agent": "codex-app3",
+      "status": "done",
+      "priority": "P0",
+      "task_type": "docs",
+      "workspace": "workspaces/T-DEMO-001-codex-app3",
+      "allowed_paths": [
+        "workspaces/T-DEMO-001-codex-app3",
+        "agents/codex-app3/output"
+      ],
+      "forbidden_paths": [
+        "projects/*/main",
+        "shared/*"
+      ],
+      "acceptance": [
+        "产出一份 Markdown 说明文档",
+        "不修改 projects/*/main",
+        "写完后更新状态与日志"
+      ],
+      "result_path": "agents/codex-app3/output/T-DEMO-001.md",
+      "requested_by": "codex-main",
+      "created_at": "2026-06-05T09:30:00+08:00",
+      "updated_at": "2026-06-05T09:30:00+08:00"
+    },
+    {
+      "task_id": "MH-P0-001",
+      "title": "把 Mana Hub Web 项目映射为 Ubuntu Codex 工作站入口",
+      "project_id": "ManaHubWeb",
+      "owner_agent": "codex-app2",
+      "status": "in_progress",
+      "priority": "P0",
+      "task_type": "frontend",
+      "workspace": "workspaces/MH-P0-001-codex-app2",
+      "allowed_paths": [
+        "G:/E盘/工作项目文件/NAS/InfoRadar/web/frontend",
+        "G:/E盘/工作项目文件/NAS/InfoRadar/web/backend"
+      ],
+      "forbidden_paths": [
+        "Cloudflare token",
+        "WEB_ACCESS_TOKEN",
+        "systemd service edits without approval"
+      ],
+      "acceptance": [
+        "项目卡片显示 Ubuntu Codex 工作站",
+        "点击项目卡片进入 Codex 工作站详情页",
+        "详情页提供 Project Hub、Web Console、SSH/tmux 操作入口",
+        "详情页提供多对话工作台、Codex App 线程摘要和运行日志",
+        "详情页展示可修改当前域名网页设计的权限边界，并保护自身项目位",
+        "不把公网交互 shell 直接裸露出来",
+        "手机端布局正常"
+      ],
+      "result_path": null,
+      "requested_by": "user",
+      "created_at": "2026-06-05T09:30:00+08:00",
+      "updated_at": "2026-06-05T09:30:00+08:00"
+    },
+    {
+      "task_id": "MH-P0-002",
+      "title": "落地 OpenClaw 微信命令中心与安全调度格式",
+      "project_id": "OpenClawBridge",
+      "owner_agent": "codex-app1",
+      "status": "done",
+      "priority": "P0",
+      "task_type": "automation_frontend",
+      "workspace": "workspaces/MH-P0-002-codex-app1",
+      "allowed_paths": [
+        "workspaces/MH-P0-002-codex-app1",
+        "agents/codex-app1/output",
+        "G:/E盘/工作项目文件/NAS/InfoRadar/web/frontend",
+        "G:/E盘/工作项目文件/NAS/NASAgentHub/coordination"
+      ],
+      "forbidden_paths": [
+        "shell passthrough",
+        "token output"
+      ],
+      "acceptance": [
+        "Mana Hub 项目面板可进入 OpenClaw 微信命令中心",
+        "可新增、保存、复制 /codexapp* 快捷指令",
+        "可选择 now、queue、hold 调度策略",
+        "可把指令发送给受保护的浏览器 Codex 会话执行",
+        "不暴露 token、Cookie、API Key",
+        "不开放裸 shell"
+      ],
+      "result_path": "agents/codex-app1/output/MH-P0-002.md",
+      "requested_by": "user",
+      "created_at": "2026-06-05T09:30:00+08:00",
+      "updated_at": "2026-06-07T15:50:54+08:00"
+    },
+    {
+      "task_id": "MH-P0-003",
+      "title": "建立 Win11/Ubuntu 双端微信指令去重执行与 Codex 资产安全镜像方案",
+      "project_id": "OpenClawBridge",
+      "owner_agent": "codex-main",
+      "status": "done",
+      "priority": "P0",
+      "task_type": "architecture_automation",
+      "workspace": "workspaces/MH-P0-003-codex-main",
+      "allowed_paths": [
+        "coordination/DUAL_RUNNER_COMMAND_POLICY.md",
+        "shared/common_scripts/agent_command_queue.py",
+        "shared/common_scripts/sync_codex_assets_to_ubuntu.ps1",
+        "agents/codex-main/output/MH-P0-003.md"
+      ],
+      "forbidden_paths": [
+        "auth.json",
+        ".sandbox-secrets",
+        "API keys",
+        "Cookie",
+        "ChatGPT/OpenAI browser session tokens",
+        "直接复制登录态"
+      ],
+      "acceptance": [
+        "说明 Win11 与 Ubuntu 同时在线时如何只执行一次微信指令",
+        "提供统一 command_id / dedupe_key / lease claim 规则",
+        "提供可被 Win11 与 Ubuntu 共用的队列工具脚本",
+        "定位本机 Codex 资产目录并给出安全镜像清单",
+        "提供 Ubuntu 路径映射方案",
+        "不复制、不输出 token、Cookie、API Key 或账号登录态"
+      ],
+      "result_path": "agents/codex-main/output/MH-P0-003.md",
+      "requested_by": "user",
+      "created_at": "2026-06-07T17:47:10+08:00",
+      "updated_at": "2026-06-07T18:01:39+08:00"
+    }
+  ]
+}

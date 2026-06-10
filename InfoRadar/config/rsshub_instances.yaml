@@ -1,0 +1,11 @@
+rsshub:
+  primary: "https://rsshub.app"
+  backups:
+    - "https://rss.wudifeixue.com"
+    - "https://rsshub.rssforever.com"
+  backup_examples:
+    - "https://rsshub.example.invalid"
+  timeout_seconds: 10
+  max_retry_per_source: 2
+  enable_public_instance: true
+  enable_self_hosted_instance: false

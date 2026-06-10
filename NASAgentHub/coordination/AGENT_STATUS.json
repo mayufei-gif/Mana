@@ -1,0 +1,51 @@
+{
+  "version": "1.0",
+  "updated_at": "2026-06-05T09:30:00+08:00",
+  "items": [
+    {
+      "agent_id": "codex-main",
+      "role": "主管 / PM / 调度 / 验收 / 合并",
+      "status": "active",
+      "current_task_id": null,
+      "current_project_id": "AgentHub",
+      "workspace": null,
+      "last_heartbeat": "2026-06-05T09:30:00+08:00",
+      "next_action": "分配 P0 任务并验收输出",
+      "locks": []
+    },
+    {
+      "agent_id": "codex-app1",
+      "role": "后端 / 自动化 / InfoRadar Core / OpenClaw",
+      "status": "idle",
+      "current_task_id": null,
+      "current_project_id": null,
+      "workspace": null,
+      "last_heartbeat": "2026-06-05T09:30:00+08:00",
+      "next_action": "等待领取 owner_agent=codex-app1 的任务",
+      "locks": []
+    },
+    {
+      "agent_id": "codex-app2",
+      "role": "前端 / Mana Hub Web / Cloudflare / Ubuntu 入口",
+      "status": "idle",
+      "current_task_id": null,
+      "current_project_id": null,
+      "workspace": null,
+      "last_heartbeat": "2026-06-05T09:30:00+08:00",
+      "next_action": "等待领取 owner_agent=codex-app2 的任务",
+      "locks": []
+    },
+    {
+      "agent_id": "codex-app3",
+      "role": "测试 / 文档 / 数据 / QA",
+      "status": "done",
+      "current_task_id": "T-DEMO-001",
+      "current_project_id": "AgentHub",
+      "workspace": "workspaces/T-DEMO-001-codex-app3",
+      "last_heartbeat": "2026-06-05T09:30:00+08:00",
+      "next_action": "等待总控验收 Demo 输出",
+      "locks": []
+    }
+  ]
+}
+

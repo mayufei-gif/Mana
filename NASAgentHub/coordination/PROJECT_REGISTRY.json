@@ -1,0 +1,99 @@
+{
+  "version": "1.0",
+  "updated_at": "2026-06-08T22:20:00+08:00",
+  "items": [
+    {
+      "project_id": "AgentHub",
+      "name": "Mana AI 公司",
+      "project_type": "ops",
+      "owner_agent": "codex-main",
+      "status": "active",
+      "main_dir_win": "G:/E盘/工作项目文件/NAS/NASAgentHub",
+      "main_dir_ubuntu": "/home/mana/NASAgentHub",
+      "public_hostname": "inforadar.mana-mana.top",
+      "service_name": null,
+      "notes": "Api Codex和Gpt Codex共享实时聊天直播。"
+    },
+    {
+      "project_id": "InfoRadar",
+      "name": "InfoRadar 信息雷达",
+      "project_type": "web_app",
+      "owner_agent": "codex-app1",
+      "status": "online",
+      "main_dir_win": "G:/E盘/工作项目文件/NAS/InfoRadar",
+      "main_dir_ubuntu": "/home/mana/InfoRadar",
+      "public_hostname": "inforadar.mana-mana.top",
+      "service_name": "inforadar-web.service",
+      "notes": "当前已通过 Cloudflare Tunnel 挂载"
+    },
+    {
+      "project_id": "ManaHubWeb",
+      "name": "Ubuntu Codex 工作站",
+      "project_type": "codex_workstation",
+      "owner_agent": "codex-app2",
+      "status": "online",
+      "main_dir_win": "G:/E盘/工作项目文件/NAS/InfoRadar/web",
+      "main_dir_ubuntu": "/home/mana/InfoRadar/web",
+      "public_hostname": "https://inforadar.mana-mana.top/#codex",
+      "service_name": "inforadar-web.service",
+      "notes": "24h 映射 Ubuntu VM 内 Codex CLI、tmux 会话、Project Hub 与浏览器工作站入口",
+      "design_permissions": {
+        "scope": "可修改当前 inforadar.mana-mana.top 域名下 Mana Hub / InfoRadar Web 的整体页面设计、布局、样式、组件和项目详情页",
+        "allowed_paths_win": [
+          "G:/E盘/工作项目文件/NAS/InfoRadar/web/frontend",
+          "G:/E盘/工作项目文件/NAS/InfoRadar/web/backend",
+          "G:/E盘/工作项目文件/NAS/NASAgentHub/coordination"
+        ],
+        "allowed_paths_ubuntu": [
+          "/home/mana/InfoRadar/web/frontend",
+          "/home/mana/InfoRadar/web/backend",
+          "/home/mana/NASAgentHub/coordination"
+        ],
+        "protected_items": [
+          "PROJECT_REGISTRY.items[project_id=ManaHubWeb]",
+          "frontend section#project-codex",
+          "project card entry for Ubuntu Codex 工作站",
+          "WEB_ACCESS_TOKEN and authentication flow",
+          "Cloudflare tunnel token and private credentials"
+        ],
+        "rule": "允许改造域名下页面体验，但不得删除、隐藏或降级 Ubuntu Codex 工作站项目位，不得泄露密钥或开放无鉴权 Shell。"
+      }
+    },
+    {
+      "project_id": "OpenClawBridge",
+      "name": "OpenClaw 微信指令桥",
+      "project_type": "automation",
+      "owner_agent": "codex-app1",
+      "status": "active",
+      "main_dir_win": "G:/E盘/工作项目文件/NAS/微信直连codex",
+      "main_dir_ubuntu": null,
+      "public_hostname": "https://inforadar.mana-mana.top/#openclaw",
+      "service_name": "openclaw-gateway-1",
+      "notes": "已入驻 Mana Hub 微信命令中心；支持 now、queue、hold 调度策略，后续仍需从 Windows bridge 逐步迁移到 Ubuntu/AgentHub"
+    },
+    {
+      "project_id": "CourseMindNAS",
+      "name": "NAS 视频字幕学习库",
+      "project_type": "web_app",
+      "owner_agent": "codex-app2",
+      "status": "mvp",
+      "main_dir_win": "G:/E盘/工作项目文件/NAS视频字幕/coursemind-nas",
+      "main_dir_ubuntu": "/home/yma648692gmail.com/coursemind-nas",
+      "public_hostname": "http://100.78.3.45:8788",
+      "service_name": "coursemind-frontend / coursemind-backend",
+      "notes": "CourseMind NAS 视频字幕与学习播放器：上传课程视频后生成字幕、章节、重点和笔记"
+    },
+    {
+      "project_id": "NextProjectSlot",
+      "name": "下一个项目工位",
+      "project_type": "reserved",
+      "owner_agent": "codex-app2",
+      "status": "planned",
+      "main_dir_win": "G:/E盘/工作项目文件/NAS/NextProjectSlot",
+      "main_dir_ubuntu": "/home/mana/NextProjectSlot",
+      "public_hostname": null,
+      "service_name": null,
+      "notes": "预留给后续新项目，可继续接入自然语言任务入口、安全执行队列和网页入口"
+    }
+  ]
+}

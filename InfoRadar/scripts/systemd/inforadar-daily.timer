@@ -1,0 +1,11 @@
+[Unit]
+Description=Run InfoRadar daily automation at 09:20 Asia/Shanghai
+
+[Timer]
+OnCalendar=*-*-* 01:20:00
+Persistent=true
+RandomizedDelaySec=5m
+Unit=inforadar-daily.service
+
+[Install]
+WantedBy=timers.target

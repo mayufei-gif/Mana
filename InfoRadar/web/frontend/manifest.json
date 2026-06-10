@@ -1,0 +1,13 @@
+{
+  "manifest_version": 3,
+  "name": "InfoRadar Folo Auto Locator",
+  "version": "2026.6.5.2",
+  "description": "Auto locate and flash Folo entries opened from InfoRadar.",
+  "content_scripts": [
+    {
+      "matches": ["https://app.folo.is/*"],
+      "js": ["folo-auto-locator.user.js"],
+      "run_at": "document_start"
+    }
+  ]
+}

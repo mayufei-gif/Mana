@@ -1,0 +1,14 @@
+score_formula:
+  source_authority: 25
+  user_relevance: 25
+  timeliness: 15
+  action_value: 20
+  opportunity_value: 10
+  risk_value: 5
+
+levels:
+  S: ">=85 必须关注，可能影响近期决策"
+  A: ">=70 值得看，可能影响学习/证书/就业"
+  B: ">=55 可收藏，长期有用"
+  C: ">=40 观察即可"
+  D: "<40 过滤或降权"

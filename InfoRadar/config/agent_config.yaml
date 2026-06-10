@@ -1,0 +1,50 @@
+llm:
+  provider: configurable
+  intent_model: rule_based_first
+  summarize_model: configurable
+  deep_model: configurable
+  temperature: 0.2
+  max_tokens: 2000
+
+rules:
+  local_first: true
+  require_source_trace: true
+  never_bypass_paywall: true
+  never_use_folo_token: true
+  risk_content_only_in_risk_section: true
+  min_local_results_before_external: 3
+
+search_scope:
+  local:
+    - reports
+    - return_folo
+    - manual_collected_items
+    - source_pool
+    - source_pool_strategy
+    - watch_only_sources
+    - task_history
+  external:
+    - public_web
+    - rss
+    - rsshub
+    - official_page
+    - github_feed
+    - youtube_public_feed
+
+boundaries:
+  allowed:
+    - public_pages
+    - rss_atom
+    - rsshub_routes
+    - github_public_feeds
+    - user_forwarded_content
+    - shopping_public_metadata
+    - paid_resource_public_metadata
+  forbidden:
+    - login_bypass
+    - captcha_bypass
+    - paywall_bypass
+    - member_course_body_scraping
+    - drm_bypass
+    - anti_crawler_bypass
+    - unrelated_personal_privacy

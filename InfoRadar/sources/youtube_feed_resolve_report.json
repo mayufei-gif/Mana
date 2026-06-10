@@ -1,0 +1,63 @@
+{
+  "@theangryexplainer": {
+    "channel_id": "UCIbWdQPKWcE16upYMXPsiog",
+    "feed": "https://www.youtube.com/feeds/videos.xml?channel_id=UCIbWdQPKWcE16upYMXPsiog",
+    "entry_count": 15
+  },
+  "@jimmy_jinglv": {
+    "channel_id": "UCO6yXh53dL0VN-QabrMRp0Q",
+    "feed": "https://www.youtube.com/feeds/videos.xml?channel_id=UCO6yXh53dL0VN-QabrMRp0Q",
+    "entry_count": 15
+  },
+  "@essenai": {
+    "channel_id": "UCqhtsdVHZvIGMr9Echeafgg",
+    "feed": "https://www.youtube.com/feeds/videos.xml?channel_id=UCqhtsdVHZvIGMr9Echeafgg",
+    "entry_count": 15
+  },
+  "@CCTV": {
+    "channel_id": "UCcLK3j-XWdGBnt5bR9NJHaQ",
+    "feed": "https://www.youtube.com/feeds/videos.xml?channel_id=UCcLK3j-XWdGBnt5bR9NJHaQ",
+    "entry_count": 15
+  },
+  "@vexilla01": {
+    "channel_id": "UCpC2D7JdcB8nlfzhX08i7fg",
+    "feed": "https://www.youtube.com/feeds/videos.xml?channel_id=UCpC2D7JdcB8nlfzhX08i7fg",
+    "entry_count": 15
+  },
+  "@wangzhian": {
+    "channel_id": "UCBKDRq35-L8xev4O7ZqBeLg",
+    "feed": "https://www.youtube.com/feeds/videos.xml?channel_id=UCBKDRq35-L8xev4O7ZqBeLg",
+    "entry_count": 15
+  },
+  "@creativesocietychina9110": {
+    "channel_id": "UC7X2OJUojXzV9uFcV7pe6VQ",
+    "feed": "https://www.youtube.com/feeds/videos.xml?channel_id=UC7X2OJUojXzV9uFcV7pe6VQ",
+    "entry_count": 15
+  },
+  "@GawrGura": {
+    "channel_id": "UCoSrY_IQQVpmIRZ9Xf-y93g",
+    "feed": "https://www.youtube.com/feeds/videos.xml?channel_id=UCoSrY_IQQVpmIRZ9Xf-y93g",
+    "entry_count": 15
+  },
+  "@SabaKrabs": {
+    "channel_id": "UCEPG8v7KmGd1ppyGR-aZW2A",
+    "feed": "https://www.youtube.com/feeds/videos.xml?channel_id=UCEPG8v7KmGd1ppyGR-aZW2A",
+    "entry_count": 15
+  },
+  "@samekosaba": {
+    "channel_id": "UCxsZ6NCzjU_t4YSxQLBcM5A",
+    "feed": "https://www.youtube.com/feeds/videos.xml?channel_id=UCxsZ6NCzjU_t4YSxQLBcM5A",
+    "entry_count": 15
+  },
+  "@SabaKaraokeHQ": {
+    "channel_id": "UCBzfGq3-5tzgiNWig2Rxe_w",
+    "feed": "https://www.youtube.com/feeds/videos.xml?channel_id=UCBzfGq3-5tzgiNWig2Rxe_w",
+    "entry_count": 3
+  },
+  "@ChanChanTalk": {
+    "channel_id": "",
+    "feed": "",
+    "entry_count": -1,
+    "error": "<HTTPError 404: 'Not Found'>"
+  }
+}

@@ -1,0 +1,177 @@
+version: "MVP-2.5B"
+system_name: "InfoRadar 个人全域情报雷达"
+
+source_layers:
+  A_core: "核心刚需：学校、就业、证书、专业、政策、毕业实习等高优先级信息"
+  B_observe: "重点观察：时事、科技、开源、行业、财经、法律权益、健康等持续跟踪信息"
+  C_opportunity: "机会探索：竞赛、项目、创业、副业观察、资源购买、工具软件等"
+  D_risk: "风险观察：诈骗、虚假招聘、培训贷、盗版破解、隐私泄露、账号风险等"
+  E_supplement: "低频补充：兴趣、生活、娱乐、审美、文化等非刚需信息"
+
+acquisition_modes:
+  rss: "公开 RSS/Atom/官方 Feed"
+  rsshub: "RSSHub 合规公开路由"
+  official_page: "公开官网/公告页人工或定期检查"
+  official_api: "公开官方 API"
+  manual_forward: "用户手动转发链接/文本/截图"
+  manual_import: "用户手动导入 OPML/收藏/表格"
+  search_watch: "公开搜索/公开页面观察"
+  price_watch: "公开商品标题、价格、评价线索观察"
+  paid_metadata_only: "仅记录付费内容公开目录、价格、试看、评价"
+  disabled: "禁用，不采集"
+
+paywall_policies:
+  public_only: "只使用公开内容"
+  metadata_only: "只记录公开元信息"
+  paid_owned_only: "仅处理用户已合法拥有并手动提供的内容"
+  forbidden_bypass: "禁止绕过付费墙、登录、验证码、DRM、反爬或访问控制"
+
+broad_categories:
+  - 我的学校
+  - 学校通知
+  - 教务学业
+  - 学工团委
+  - 奖助评优
+  - 入团竞选
+  - 创新创业竞赛
+  - 校园招聘实习
+  - 毕业档案
+  - 时事政治
+  - 热点新闻
+  - 政策风向
+  - 本地山西
+  - 国际观察
+  - 法律权益
+  - 就业招聘
+  - 职业证书
+  - 工业技术
+  - 电气自动化
+  - PLC变频器
+  - 工业机器人
+  - CAD_EPLAN
+  - AI工具
+  - 科技新闻
+  - 开源仓库
+  - 编程开发
+  - 网络安全
+  - NAS自动化
+  - 3D打印硬件
+  - 学习资源
+  - 考试升学
+  - 语言学习
+  - 论文文档
+  - 财经商业
+  - 投资理财
+  - 消费购物
+  - 数码装备
+  - 工具软件
+  - 付费知识
+  - 课程资源
+  - 内容平台
+  - 微信公众号
+  - 视频号
+  - 抖音快手
+  - B站YouTube
+  - 知乎小红书微博
+  - 个人项目
+  - 机会观察
+  - 副业观察
+  - 创业扶持
+  - 健康医学
+  - 心理成长
+  - 生活服务
+  - 交通出行
+  - 住房租房
+  - 文化历史
+  - 读书影视
+  - 游戏娱乐
+  - 体育赛事
+  - 风险避坑
+  - 诈骗灰产
+  - 虚假招聘
+  - 培训贷
+  - 账号隐私
+  - 盗版破解风险
+
+platform_defaults:
+  Folo/RSS:
+    acquisition_mode: rss
+    paywall_policy: public_only
+  RSSHub:
+    acquisition_mode: rsshub
+    paywall_policy: public_only
+  GitHub:
+    acquisition_mode: official_api
+    paywall_policy: public_only
+  YouTube:
+    acquisition_mode: rss
+    paywall_policy: public_only
+  B站:
+    acquisition_mode: rsshub
+    paywall_policy: public_only
+  微信公众号:
+    acquisition_mode: manual_forward
+    paywall_policy: public_only
+  视频号:
+    acquisition_mode: manual_forward
+    paywall_policy: public_only
+  抖音:
+    acquisition_mode: manual_forward
+    paywall_policy: public_only
+  知乎:
+    acquisition_mode: rsshub
+    paywall_policy: public_only
+  小红书:
+    acquisition_mode: manual_forward
+    paywall_policy: public_only
+  微博:
+    acquisition_mode: rsshub
+    paywall_policy: public_only
+  淘宝:
+    acquisition_mode: price_watch
+    paywall_policy: metadata_only
+  拼多多:
+    acquisition_mode: price_watch
+    paywall_policy: metadata_only
+  京东:
+    acquisition_mode: price_watch
+    paywall_policy: metadata_only
+  闲鱼:
+    acquisition_mode: manual_import
+    paywall_policy: metadata_only
+  付费知识:
+    acquisition_mode: paid_metadata_only
+    paywall_policy: metadata_only
+
+daily_intel_sections:
+  - 必须关注
+  - 我的学校
+  - 专业成长
+  - AI与科技
+  - 热点与时事
+  - 学习成长
+  - 资源与购物
+  - 生活权益
+  - 机会观察
+  - 文化娱乐
+  - 风险提醒
+  - 今日建议
+
+collection_boundaries:
+  allowed:
+    - 公开 RSS/Atom
+    - 公开网页
+    - 官方公告
+    - 公开 API
+    - RSSHub 合规公开路由
+    - 用户手动转发的链接/文本/截图
+    - 用户自己导出的收藏、订阅、OPML、表格
+  forbidden:
+    - 绕过登录
+    - 绕过验证码
+    - 破解付费内容
+    - 抓取会员课程正文
+    - 绕过平台反爬
+    - 收集无关个人隐私
+    - 自动批量骚扰评论、私信或账号
+    - 传播盗版、破解、注册机或侵权资源

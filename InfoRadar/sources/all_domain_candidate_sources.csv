@@ -1,0 +1,90 @@
+﻿源名称,源状态,候选URL,RSS候选,平台,source_layer,acquisition_mode,broad_category,decision_scope,push_frequency,risk_policy,paywall_policy,优先级,是否一手源,建议动作,备注
+山西晋中理工学院官网,候选待加入,https://www.sxjzit.edu.cn/,,学校官网,A_core,official_page,我的学校,学校行动,daily,normal,public_only,最高,是,先人工核验质量，再加入 Folo/RSS/监控源池,学校通知、新闻、公告、赛事的一手入口
+山西晋中理工学院智慧就业系统,候选待加入,https://jygl.sxjzit.edu.cn/,,学校就业系统,A_core,official_page,校园招聘实习,学校行动,daily,normal,public_only,最高,是,先人工核验质量，再加入 Folo/RSS/监控源池,校园招聘、岗位、双选会、就业公告一手入口
+山西省教育厅公告通知,候选待加入,https://jyt.shanxi.gov.cn/xwzx/ggtz/,,政府官网,A_core,official_page,政策风向,环境判断,daily,normal,public_only,高,是,先人工核验质量，再加入 Folo/RSS/监控源池,
+山西省人社厅,候选待加入,https://rst.shanxi.gov.cn/,,政府官网,A_core,official_page,政策风向,环境判断,daily,normal,public_only,高,是,先人工核验质量，再加入 Folo/RSS/监控源池,
+山西省工信厅,候选待加入,https://gxt.shanxi.gov.cn/,,政府官网,A_core,official_page,政策风向,环境判断,daily,normal,public_only,高,是,先人工核验质量，再加入 Folo/RSS/监控源池,
+中国政府网政策,候选待加入,https://www.gov.cn/zhengce/,,政府官网,A_core,official_page,政策风向,环境判断,daily,normal,public_only,高,是,先人工核验质量，再加入 Folo/RSS/监控源池,
+教育部通知公告,候选待加入,https://www.moe.gov.cn/jyb_xxgk/s5743/,,政府官网,A_core,official_page,政策风向,环境判断,daily,normal,public_only,高,是,先人工核验质量，再加入 Folo/RSS/监控源池,
+人社部,候选待加入,https://www.mohrss.gov.cn/,,政府官网,A_core,official_page,政策风向,环境判断,daily,normal,public_only,高,是,先人工核验质量，再加入 Folo/RSS/监控源池,
+工信部,候选待加入,https://www.miit.gov.cn/,,政府官网,B_observe,official_page,科技新闻,工具/技术选择,daily_or_weekly,normal,public_only,高,是,先人工核验质量，再加入 Folo/RSS/监控源池,
+国家市场监督管理总局,候选待加入,https://www.samr.gov.cn/,,政府官网,B_observe,official_page,法律权益,生活权益,daily_or_weekly,normal,public_only,中,是,先人工核验质量，再加入 Folo/RSS/监控源池,
+山西焦煤招聘入口,候选待加入,https://www.sxcc.com.cn/,,企业官网,A_core,official_page,就业招聘,职业成长,daily,normal,public_only,高,是,先人工核验质量，再加入 Folo/RSS/监控源池,需继续定位招聘/公告子栏目
+晋能控股集团,候选待加入,https://www.jinnengholding.com/,,企业官网,A_core,official_page,就业招聘,职业成长,daily,normal,public_only,高,是,先人工核验质量，再加入 Folo/RSS/监控源池,需继续定位招聘/公告子栏目
+太重集团,候选待加入,https://www.tz.com.cn/,,企业官网,A_core,official_page,就业招聘,职业成长,daily,normal,public_only,高,是,先人工核验质量，再加入 Folo/RSS/监控源池,需继续定位招聘/公告子栏目
+潞安化工集团,候选待加入,https://www.chinaluan.com/,,企业官网,A_core,official_page,就业招聘,职业成长,daily,normal,public_only,中,是,先人工核验质量，再加入 Folo/RSS/监控源池,需继续定位招聘/公告子栏目
+应急管理部特种作业,候选待加入,https://www.mem.gov.cn/,,政府官网,A_core,official_page,职业证书,职业成长,daily,normal,public_only,高,是,先人工核验质量，再加入 Folo/RSS/监控源池,电工证/特种作业政策需核验官方入口
+中国教育考试网,候选待加入,https://www.neea.edu.cn/,,官方考试,A_core,official_page,考试升学,学习成长,daily,normal,public_only,高,是,先人工核验质量，再加入 Folo/RSS/监控源池,
+GitHub Trending,候选待加入,https://github.com/trending,,GitHub,B_observe,official_api,开源仓库,工具/技术选择,daily_or_weekly,normal,public_only,高,是,先人工核验质量，再加入 Folo/RSS/监控源池,
+GitHub Releases Atom模板,候选待加入,https://github.com/{owner}/{repo}/releases.atom,,GitHub,B_observe,rss,开源仓库,工具/技术选择,daily_or_weekly,normal,public_only,高,是,先人工核验质量，再加入 Folo/RSS/监控源池,模板源，需替换 owner/repo
+OpenAI News RSS,候选待加入,https://openai.com/news/rss.xml,https://openai.com/news/rss.xml,RSS,B_observe,rss,AI工具,工具/技术选择,daily_or_weekly,normal,public_only,高,是,先人工核验质量，再加入 Folo/RSS/监控源池,
+RSSHub官方仓库,候选待加入,https://github.com/DIYgod/RSSHub,,GitHub,B_observe,official_api,开源仓库,工具/技术选择,daily_or_weekly,normal,public_only,高,是,先人工核验质量，再加入 Folo/RSS/监控源池,
+Folo官方仓库,候选待加入,https://github.com/RSSNext/Folo,,GitHub,B_observe,official_api,开源仓库,工具/技术选择,daily_or_weekly,normal,public_only,高,是,先人工核验质量，再加入 Folo/RSS/监控源池,
+Hacker News,候选待加入,https://news.ycombinator.com/,https://news.ycombinator.com/rss,RSS,B_observe,rss,科技新闻,工具/技术选择,daily_or_weekly,normal,public_only,中,是,先人工核验质量，再加入 Folo/RSS/监控源池,
+36氪,候选待加入,https://36kr.com/,,内容平台,B_observe,rsshub,科技新闻,工具/技术选择,daily_or_weekly,normal,public_only,中,否,先人工核验质量，再加入 Folo/RSS/监控源池,
+少数派,候选待加入,https://sspai.com/,,RSS,C_opportunity,rss,工具软件,购买/学习决策,weekly,normal,public_only,中,否,先人工核验质量，再加入 Folo/RSS/监控源池,
+开源中国,候选待加入,https://www.oschina.net/,,RSSHub,B_observe,rsshub,开源仓库,工具/技术选择,daily_or_weekly,normal,public_only,中,否,先人工核验质量，再加入 Folo/RSS/监控源池,
+知乎热点/收藏,候选待加入,https://www.zhihu.com/,,知乎,B_observe,rsshub,知乎小红书微博,长期观察,daily_or_weekly,normal,public_only,中,否,先人工核验质量，再加入 Folo/RSS/监控源池,只用公开内容或手动收藏导入
+微博热搜,候选待加入,https://s.weibo.com/top/summary,,微博,B_observe,rsshub,热点新闻,环境判断,daily_or_weekly,normal,public_only,中,否,先人工核验质量，再加入 Folo/RSS/监控源池,
+B站技术UP主列表,候选待加入,https://www.bilibili.com/,,B站,B_observe,rsshub,B站YouTube,长期观察,daily_or_weekly,normal,public_only,中,否,先人工核验质量，再加入 Folo/RSS/监控源池,需挑选高质量技术/学习UP主，不硬抓登录内容
+YouTube科技频道列表,候选待加入,https://www.youtube.com/,,YouTube,B_observe,rss,B站YouTube,长期观察,daily_or_weekly,normal,public_only,中,否,先人工核验质量，再加入 Folo/RSS/监控源池,可用公开频道 RSS，需补频道ID
+微信公众号手动转发池,候选待加入,manual://wechat-official-accounts,,微信公众号,B_observe,manual_forward,微信公众号,长期观察,daily_or_weekly,normal,public_only,中,否,先人工核验质量，再加入 Folo/RSS/监控源池,由用户转发文章链接/文本/截图，不自动硬抓
+视频号手动转发池,候选待加入,manual://wechat-video,,视频号,B_observe,manual_forward,视频号,长期观察,daily_or_weekly,normal,public_only,中,否,先人工核验质量，再加入 Folo/RSS/监控源池,由用户转发链接/截图，不绕平台限制
+抖音热点手动线索池,候选待加入,manual://douyin,,抖音,B_observe,manual_forward,抖音快手,长期观察,daily_or_weekly,normal,public_only,中,否,先人工核验质量，再加入 Folo/RSS/监控源池,只做公开线索/手动转发，不绕登录和反爬
+小红书手动线索池,候选待加入,manual://xiaohongshu,,小红书,B_observe,manual_forward,知乎小红书微博,长期观察,daily_or_weekly,normal,public_only,低,否,先人工核验质量，再加入 Folo/RSS/监控源池,只做公开线索/手动转发
+淘宝购物线索池,候选待加入,manual://taobao-price-watch,,淘宝,C_opportunity,price_watch,消费购物,购买/学习决策,weekly,metadata_public_only,metadata_only,中,否,先人工核验质量，再加入 Folo/RSS/监控源池,只记录公开标题、价格、链接、评价线索
+拼多多购物线索池,候选待加入,manual://pdd-price-watch,,拼多多,C_opportunity,price_watch,消费购物,购买/学习决策,weekly,metadata_public_only,metadata_only,中,否,先人工核验质量，再加入 Folo/RSS/监控源池,只记录公开标题、价格、链接、评价线索
+京东数码装备线索池,候选待加入,manual://jd-price-watch,,京东,C_opportunity,price_watch,数码装备,购买/学习决策,weekly,normal,metadata_only,中,否,先人工核验质量，再加入 Folo/RSS/监控源池,NAS硬盘、工具软件、电子设备价格观察
+闲鱼二手设备线索池,候选待加入,manual://xianyu-watch,,闲鱼,C_opportunity,manual_import,数码装备,购买/学习决策,weekly,risk_only_no_opportunity,metadata_only,低,否,先人工核验质量，再加入 Folo/RSS/监控源池,只记录公开线索，警惕诈骗
+付费知识公开元信息池,候选待加入,manual://paid-knowledge,,付费知识,C_opportunity,paid_metadata_only,付费知识,购买/学习决策,weekly,metadata_public_only,metadata_only,中,否,先人工核验质量，再加入 Folo/RSS/监控源池,只记录公开目录、价格、试看、评价，禁止破解和传播付费正文
+劳动权益风险池,候选待加入,manual://labor-rights,,手动/公开搜索,B_observe,manual_import,法律权益,生活权益,daily_or_weekly,normal,public_only,中,否,先人工核验质量，再加入 Folo/RSS/监控源池,实习协议、工资、社保、劳动合同、仲裁线索
+虚假招聘风险池,候选待加入,manual://fake-jobs,,手动/公开搜索,D_risk,manual_forward,虚假招聘,风险规避,on_trigger,risk_only_no_opportunity,public_only,高,否,先人工核验质量，再加入 Folo/RSS/监控源池,只进入风险提醒
+培训贷风险池,候选待加入,manual://training-loan-risk,,手动/公开搜索,D_risk,manual_forward,培训贷,风险规避,on_trigger,risk_only_no_opportunity,public_only,高,否,先人工核验质量，再加入 Folo/RSS/监控源池,只进入风险提醒
+账号隐私风险池,候选待加入,manual://privacy-risk,,手动/公开搜索,D_risk,manual_forward,账号隐私,风险规避,on_trigger,risk_only_no_opportunity,public_only,高,否,先人工核验质量，再加入 Folo/RSS/监控源池,账号封禁、隐私泄露、诈骗套路
+健康医学公开科普池,候选待加入,manual://health-public,,公开网页,B_observe,manual_import,健康医学,生活权益,daily_or_weekly,normal,public_only,低,否,先人工核验质量，再加入 Folo/RSS/监控源池,只做科普线索，医疗问题需专业医生判断
+财经商业观察池,候选待加入,manual://business-watch,,公开网页/RSS,B_observe,search_watch,财经商业,长期观察,daily_or_weekly,normal,public_only,中,否,先人工核验质量，再加入 Folo/RSS/监控源池,产业趋势、公司动态、消费趋势
+3D打印项目池,候选待加入,manual://3d-printing-projects,,公开网页/RSS,C_opportunity,search_watch,3D打印硬件,长期观察,weekly,normal,public_only,中,否,先人工核验质量，再加入 Folo/RSS/监控源池,项目机会、耗材、设备、作品集
+生活服务避坑池,候选待加入,manual://life-service-risk,,手动/公开搜索,E_supplement,manual_forward,生活服务,生活权益,low_frequency,normal,public_only,低,否,先人工核验质量，再加入 Folo/RSS/监控源池,
+文化历史阅读池,候选待加入,manual://culture-history,,RSS/手动,E_supplement,manual_import,文化历史,文化娱乐,low_frequency,normal,public_only,低,否,先人工核验质量，再加入 Folo/RSS/监控源池,
+游戏娱乐低频池,候选待加入,manual://games-entertainment,,RSS/手动,E_supplement,manual_import,游戏娱乐,文化娱乐,low_frequency,normal,public_only,低,否,先人工核验质量，再加入 Folo/RSS/监控源池,
+山西省人民政府,候选待加入,https://www.shanxi.gov.cn/,,政府官网,A_core,official_page,本地山西,环境判断,daily,normal,public_only,高,是,先人工核验质量，再加入 Folo/RSS/监控源池,山西本地政策、民生、产业和政务入口
+太原市人民政府,候选待加入,https://www.taiyuan.gov.cn/,,政府官网,B_observe,official_page,本地山西,环境判断,daily_or_weekly,normal,public_only,中,是,先人工核验质量，再加入 Folo/RSS/监控源池,
+晋中市人民政府,候选待加入,https://www.sxjz.gov.cn/,,政府官网,B_observe,official_page,本地山西,环境判断,daily_or_weekly,normal,public_only,中,是,先人工核验质量，再加入 Folo/RSS/监控源池,
+长治市人民政府,候选待加入,https://www.changzhi.gov.cn/,,政府官网,B_observe,official_page,本地山西,环境判断,daily_or_weekly,normal,public_only,中,是,先人工核验质量，再加入 Folo/RSS/监控源池,
+人民网时政频道RSS,候选待加入,http://www.people.com.cn/rss/politics.xml,http://www.people.com.cn/rss/politics.xml,RSS,B_observe,rss,时事政治,环境判断,daily_or_weekly,normal,public_only,高,是,先人工核验质量，再加入 Folo/RSS/监控源池,
+人民网国际频道RSS,候选待加入,http://www.people.com.cn/rss/world.xml,http://www.people.com.cn/rss/world.xml,RSS,B_observe,rss,国际观察,环境判断,daily_or_weekly,normal,public_only,中,是,先人工核验质量，再加入 Folo/RSS/监控源池,
+新华网,候选待加入,https://www.news.cn/,,公开网页/RSS,B_observe,search_watch,热点新闻,环境判断,daily_or_weekly,normal,public_only,高,是,先人工核验质量，再加入 Folo/RSS/监控源池,
+央视新闻,候选待加入,https://news.cctv.com/,,公开网页/RSS,B_observe,search_watch,热点新闻,环境判断,daily_or_weekly,normal,public_only,高,是,先人工核验质量，再加入 Folo/RSS/监控源池,
+联合国新闻,候选待加入,https://news.un.org/zh/,,公开网页/RSS,B_observe,search_watch,国际观察,环境判断,daily_or_weekly,normal,public_only,中,是,先人工核验质量，再加入 Folo/RSS/监控源池,
+国家法律法规数据库,候选待加入,https://flk.npc.gov.cn/,,政府官网,B_observe,official_page,法律权益,生活权益,daily_or_weekly,normal,public_only,高,是,先人工核验质量，再加入 Folo/RSS/监控源池,法律条文和政策核验入口
+中国裁判文书网公开检索入口,候选待加入,https://wenshu.court.gov.cn/,,公开网页,B_observe,official_page,法律权益,生活权益,daily_or_weekly,normal,public_only,低,是,先人工核验质量，再加入 Folo/RSS/监控源池,仅作为公开入口记录，不自动批量抓取
+12315消费者权益入口,候选待加入,https://www.12315.cn/,,政府官网,B_observe,official_page,法律权益,生活权益,daily_or_weekly,normal,public_only,中,是,先人工核验质量，再加入 Folo/RSS/监控源池,
+国家卫健委,候选待加入,https://www.nhc.gov.cn/,,政府官网,B_observe,official_page,健康医学,生活权益,daily_or_weekly,normal,public_only,中,是,先人工核验质量，再加入 Folo/RSS/监控源池,
+中国疾控中心,候选待加入,https://www.chinacdc.cn/,,政府官网,B_observe,official_page,健康医学,生活权益,daily_or_weekly,normal,public_only,中,是,先人工核验质量，再加入 Folo/RSS/监控源池,
+丁香园公开科普线索池,候选待加入,manual://dxy-public-health,,公开网页/手动,B_observe,manual_import,健康医学,生活权益,daily_or_weekly,normal,public_only,低,否,先人工核验质量，再加入 Folo/RSS/监控源池,只做公开科普线索，不替代医生诊断
+国家统计局,候选待加入,https://www.stats.gov.cn/,,政府官网,B_observe,official_page,财经商业,长期观察,daily_or_weekly,normal,public_only,中,是,先人工核验质量，再加入 Folo/RSS/监控源池,
+中国人民银行,候选待加入,https://www.pbc.gov.cn/,,政府官网,B_observe,official_page,财经商业,长期观察,daily_or_weekly,normal,public_only,中,是,先人工核验质量，再加入 Folo/RSS/监控源池,
+证监会,候选待加入,https://www.csrc.gov.cn/,,政府官网,B_observe,official_page,财经商业,长期观察,daily_or_weekly,normal,public_only,中,是,先人工核验质量，再加入 Folo/RSS/监控源池,
+国家发改委,候选待加入,https://www.ndrc.gov.cn/,,政府官网,A_core,official_page,政策风向,环境判断,daily,normal,public_only,高,是,先人工核验质量，再加入 Folo/RSS/监控源池,
+国家能源局,候选待加入,https://www.nea.gov.cn/,,政府官网,B_observe,official_page,工业技术,职业成长,daily_or_weekly,normal,public_only,中,是,先人工核验质量，再加入 Folo/RSS/监控源池,能源、电力、煤炭和新型能源体系相关
+国家网络安全通报中心,候选待加入,https://www.cert.org.cn/,,政府/行业官网,B_observe,official_page,网络安全,长期观察,daily_or_weekly,normal,public_only,中,是,先人工核验质量，再加入 Folo/RSS/监控源池,
+CVE公开漏洞库,候选待加入,https://www.cve.org/,,公开网页/RSS,B_observe,search_watch,网络安全,长期观察,daily_or_weekly,normal,public_only,中,是,先人工核验质量，再加入 Folo/RSS/监控源池,
+Microsoft安全更新指南,候选待加入,https://msrc.microsoft.com/update-guide,,公开网页,B_observe,official_page,网络安全,长期观察,daily_or_weekly,normal,public_only,中,是,先人工核验质量，再加入 Folo/RSS/监控源池,
+中国大学MOOC公开课程线索池,候选待加入,manual://icourse-public,,公开网页/手动,B_observe,manual_import,学习资源,学习成长,daily_or_weekly,normal,public_only,中,否,先人工核验质量，再加入 Folo/RSS/监控源池,只记录公开课程目录和学习线索
+Coursera公开目录线索池,候选待加入,manual://coursera-public-catalog,,公开网页/手动,C_opportunity,manual_import,课程资源,购买/学习决策,weekly,normal,metadata_only,低,否,先人工核验质量，再加入 Folo/RSS/监控源池,只记录公开目录、价格、试看，不抓付费课程正文
+B站学习UP主池,候选待加入,manual://bilibili-study-creators,,B站,B_observe,manual_import,B站YouTube,长期观察,daily_or_weekly,normal,public_only,中,否,先人工核验质量，再加入 Folo/RSS/监控源池,人工挑选高质量学习/技术UP主，再用公开RSS或RSSHub
+YouTube公开课程频道池,候选待加入,manual://youtube-learning-channels,,YouTube,B_observe,manual_import,B站YouTube,长期观察,daily_or_weekly,normal,public_only,中,否,先人工核验质量，再加入 Folo/RSS/监控源池,补充频道ID后可用公开视频RSS
+RSSHub路由候选池,候选待加入,https://docs.rsshub.app/,,RSSHub,B_observe,rsshub,开源仓库,工具/技术选择,daily_or_weekly,normal,public_only,中,是,先人工核验质量，再加入 Folo/RSS/监控源池,用于后续为平台源寻找合规公开RSSHub路由
+GitHub Topic AI,候选待加入,https://github.com/topics/artificial-intelligence,,GitHub,B_observe,official_api,开源仓库,工具/技术选择,daily_or_weekly,normal,public_only,中,是,先人工核验质量，再加入 Folo/RSS/监控源池,
+GitHub Topic Automation,候选待加入,https://github.com/topics/automation,,GitHub,B_observe,official_api,开源仓库,工具/技术选择,daily_or_weekly,normal,public_only,中,是,先人工核验质量，再加入 Folo/RSS/监控源池,
+GitHub Topic PLC,候选待加入,https://github.com/topics/plc,,GitHub,B_observe,official_api,工业技术,职业成长,daily_or_weekly,normal,public_only,低,是,先人工核验质量，再加入 Folo/RSS/监控源池,
+NAS与远程控制公开项目池,候选待加入,manual://nas-remote-projects,,公开网页/RSS,C_opportunity,search_watch,NAS自动化,工具/技术选择,weekly,normal,public_only,中,否,先人工核验质量，再加入 Folo/RSS/监控源池,Tailscale、RustDesk、Docker、NAS自动化项目观察
+什么值得买公开线索池,候选待加入,manual://smzdm-public,,公开网页/手动,C_opportunity,manual_import,消费购物,购买/学习决策,weekly,metadata_public_only,metadata_only,低,否,先人工核验质量，再加入 Folo/RSS/监控源池,只记录公开价格和评价线索
+1688工业耗材线索池,候选待加入,manual://1688-industrial-supplies,,公开网页/手动,C_opportunity,manual_import,消费购物,购买/学习决策,weekly,metadata_public_only,metadata_only,低,否,先人工核验质量，再加入 Folo/RSS/监控源池,电气工具、耗材和3D打印耗材价格观察
+租房与生活服务线索池,候选待加入,manual://rent-life-service,,公开网页/手动,E_supplement,manual_import,住房租房,生活权益,low_frequency,normal,metadata_only,低,否,先人工核验质量，再加入 Folo/RSS/监控源池,只记录公开房源线索和避坑信息，不抓个人隐私
+铁路12306公告,候选待加入,https://www.12306.cn/,,官方网页,E_supplement,official_page,交通出行,生活权益,low_frequency,normal,public_only,低,是,先人工核验质量，再加入 Folo/RSS/监控源池,
+中国天气公开入口,候选待加入,https://www.weather.com.cn/,,公开网页,E_supplement,official_page,生活服务,生活权益,low_frequency,normal,public_only,低,是,先人工核验质量，再加入 Folo/RSS/监控源池,
+国家博物馆,候选待加入,https://www.chnmuseum.cn/,,公开网页,E_supplement,official_page,文化历史,文化娱乐,low_frequency,normal,public_only,低,是,先人工核验质量，再加入 Folo/RSS/监控源池,
+豆瓣读书影视手动线索池,候选待加入,manual://douban-books-movies,,手动/公开搜索,E_supplement,manual_import,读书影视,文化娱乐,low_frequency,normal,public_only,低,否,先人工核验质量，再加入 Folo/RSS/监控源池,只做公开条目线索，不抓账号内容
+Steam愿望单手动线索池,候选待加入,manual://steam-watch,,手动/公开搜索,E_supplement,manual_import,游戏娱乐,文化娱乐,low_frequency,normal,metadata_only,低,否,先人工核验质量，再加入 Folo/RSS/监控源池,只记录公开价格和评测线索
+体育赛事低频线索池,候选待加入,manual://sports-events,,公开网页/RSS,E_supplement,search_watch,体育赛事,文化娱乐,low_frequency,normal,public_only,低,否,先人工核验质量，再加入 Folo/RSS/监控源池,
