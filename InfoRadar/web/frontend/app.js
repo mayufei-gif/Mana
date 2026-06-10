@@ -334,7 +334,7 @@ function openLocator(id) {
   const filePath = payload.source_file || payload.path || payload["path"] || item.body || "";
   const readableFilePath = looksLikeFilePath(filePath) ? filePath : "";
   const row = payload.source_row || payload.index || payload["序号"] || "";
-  const publishedAt = payload.published_at || payload["发布时间"] || payload.modified_at || "";
+  const publishedAt = formatBeijingDateTimeLoose(payload.published_at || payload["发布时间"] || payload.modified_at || "", true);
   box.innerHTML = `
     <div class="locator-title">${escapeHtml(title)}</div>
     <div class="locator-grid">
@@ -1069,6 +1069,27 @@ function formatBeijingDateTime(value, withSeconds = false) {
   return `${parts.year}-${parts.month}-${parts.day} ${time}`;
 }
 
+function formatBeijingDateTimeLoose(value, withSeconds = false) {
+  if (!value) return "";
+  const raw = String(value).trim();
+  if (!raw) return "";
+  if (!/^\d{4}-\d{2}-\d{2}[ T]\d{2}:\d{2}/.test(raw)) return raw;
+  return formatBeijingDateTime(raw, withSeconds);
+}
+
+function beijingBackendIntervalLabel(health = {}) {
+  const previous = health.previous_finished_at || "";
+  const current = health.current_finished_at || health.last_finished_at || "";
+  if (previous || current) {
+    return `${formatBeijingDateTimeLoose(previous, true) || "首次记录"} → ${formatBeijingDateTimeLoose(current, true) || "等待巡检完成"}`;
+  }
+  const label = String(health.inspection_interval_label || "").trim();
+  if (!label || !label.includes("→")) return "";
+  const parts = label.split("→").map((part) => part.trim());
+  if (parts.length < 2) return "";
+  return `${formatBeijingDateTimeLoose(parts[0], true) || parts[0] || "首次记录"} → ${formatBeijingDateTimeLoose(parts[1], true) || parts[1] || "等待巡检完成"}`;
+}
+
 function beijingInspectionWindow(now = new Date()) {
   const slots = [
     { hour: 8, minute: 30 },
@@ -1108,7 +1129,7 @@ function beijingInspectionWindow(now = new Date()) {
 }
 
 function inspectionIntervalLabel(health = state.latestHealth || {}) {
-  return beijingInspectionWindow().label;
+  return beijingBackendIntervalLabel(health) || beijingInspectionWindow().label;
 }
 
 function hiveMetrics(items = state.currentHiveItems || []) {
@@ -1683,15 +1704,10 @@ async function downloadApprovedResources() {
 
 function formatTimelineClick(value) {
   if (!value) return "未记录";
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return value;
-  return date.toLocaleString("zh-CN", {
-    month: "2-digit",
-    day: "2-digit",
-    hour: "2-digit",
-    minute: "2-digit",
-    hour12: false,
-  });
+  const date = parseBackendUtcDate(value);
+  if (!date) return value;
+  const parts = beijingParts(date);
+  return `${parts.month}-${parts.day} ${parts.hour}:${parts.minute}`;
 }
 
 function renderFoloTimeline() {
@@ -1770,6 +1786,7 @@ function renderIntelCards(items = state.currentApiHiveItems || []) {
       const sourceType = item.collection_type || "来源待确认";
       const foloStatus = item.folo_position_status || (item.has_folo_internal_id ? "可打开 Folo 原条" : "缺少 Folo 内部条目 ID");
       const hot = hotspotSignal(item);
+      const publishedAt = formatBeijingDateTimeLoose(item.published_at || "", true) || "待补充";
       return `
         <article class="intel-card${starClass}">
           <div class="intel-head">
@@ -1778,7 +1795,7 @@ function renderIntelCards(items = state.currentApiHiveItems || []) {
           </div>
           <div class="intel-time">
             <span>发布时间</span>
-            <strong>${escapeHtml(item.published_at || "待补充")}</strong>
+            <strong>${escapeHtml(publishedAt)}</strong>
           </div>
           <div class="badges">
             <span class="badge">${escapeHtml(item.section || item.category || "未分类")}</span>
@@ -2019,9 +2036,10 @@ function renderSearchResults(data, append = false) {
       const payload = item.payload || {};
       const isIntelLike = String(item.kind || "").includes("情报");
       const timeLabel = isIntelLike ? "发布时间" : item.kind === "文件" || item.kind === "源池文件" ? "文件时间" : "记录时间";
-      const timeValue = isIntelLike
+      const rawTimeValue = isIntelLike
         ? (payload.published_at || payload["发布时间"] || "")
         : (payload.published_at || payload["发布时间"] || payload.modified_at || payload.collected_at || payload.detected_at || payload["创建时间"] || "");
+      const timeValue = formatBeijingDateTimeLoose(rawTimeValue, true) || rawTimeValue;
       const chips = [item.kind, item.meta, `相关度 ${item.score || "-"}`].filter(Boolean);
       return `
         <article class="search-result-card intel-card">
