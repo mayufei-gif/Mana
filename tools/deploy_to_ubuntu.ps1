@@ -11,6 +11,8 @@ $RepoRoot = Split-Path -Parent $PSScriptRoot
 $stamp = Get-Date -Format "yyyyMMdd_HHmmss"
 $archive = Join-Path $env:TEMP "mana_deploy_$stamp.tar.gz"
 $archiveName = Split-Path -Leaf $archive
+$remoteScriptLocal = Join-Path $env:TEMP "mana_remote_deploy_$stamp.sh"
+$remoteScriptName = Split-Path -Leaf $remoteScriptLocal
 
 if (!(Test-Path -LiteralPath (Join-Path $RepoRoot ".git"))) {
   throw "Not a git repository: $RepoRoot"
@@ -86,5 +88,10 @@ systemctl show inforadar-web.service --property=MainPID --value 2>/dev/null || t
 
 $remoteScript = $remoteScript.Replace("__STAMP__", $stamp).Replace("__REMOTE_BASE__", $RemoteBase).Replace("__ARCHIVE_NAME__", $archiveName)
 
-$remoteScript | ssh -o BatchMode=yes $SshTarget "bash -s"
+$utf8NoBom = [Text.UTF8Encoding]::new($false)
+[IO.File]::WriteAllText($remoteScriptLocal, $remoteScript, $utf8NoBom)
+scp -T $remoteScriptLocal "${SshTarget}:/tmp/$remoteScriptName"
+$remoteExec = "bash /tmp/$remoteScriptName; status=`$?; rm -f /tmp/$remoteScriptName; exit `$status"
+ssh -o BatchMode=yes $SshTarget $remoteExec
 Remove-Item -LiteralPath $archive -Force
+Remove-Item -LiteralPath $remoteScriptLocal -Force
