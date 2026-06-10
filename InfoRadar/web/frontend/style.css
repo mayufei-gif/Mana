@@ -424,6 +424,7 @@ main {
 
 .project-top {
   display: flex;
+  align-items: flex-start;
   justify-content: space-between;
   gap: 10px;
 }
@@ -437,12 +438,23 @@ main {
 .status-chip,
 .status-pill {
   flex: 0 0 auto;
+  display: inline-grid;
+  place-items: center;
+  box-sizing: border-box;
+  min-height: 32px;
   border-radius: 999px;
-  padding: 5px 10px;
+  padding: 0 12px;
   background: #e6f1ec;
   color: var(--mint);
   font-size: 12px;
   font-weight: 700;
+  line-height: 1;
+  text-align: center;
+  white-space: nowrap;
+}
+
+.status-chip {
+  min-width: 64px;
 }
 
 .status-pill.ok {
