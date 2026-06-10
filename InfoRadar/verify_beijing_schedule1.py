@@ -44,8 +44,8 @@ def main() -> None:
     require(
         "SCHEDULE.4 静态版本已刷新",
         "浏览器仍可能加载旧 JS。",
-        "index.html 引用 20260610-merged-wechat-beijing1。",
-        "20260610-merged-wechat-beijing1" in index_html,
+        "index.html 引用当前合并版本 20260610-coursemind-button-main1。",
+        "20260610-coursemind-button-main1" in index_html,
     )
     require(
         "SCHEDULE.5 四次更新文案",
