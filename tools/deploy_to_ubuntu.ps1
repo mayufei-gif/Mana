@@ -88,6 +88,18 @@ MAIN_PID=$(systemctl show inforadar-web.service --property=MainPID --value 2>/de
 if [ -n "$MAIN_PID" ] && [ "$MAIN_PID" != "0" ]; then
   kill "$MAIN_PID" || true
 fi
+sleep 2
+
+# If a previous uvicorn escaped systemd tracking, it can keep 8769 busy and
+# force the service into auto-restart. Kill only the current user's InfoRadar
+# uvicorn process so systemd can take the port cleanly.
+for pid in $(fuser 8769/tcp 2>/dev/null || true); do
+  owner=$(ps -o user= -p "$pid" 2>/dev/null | tr -d ' ')
+  cmd=$(ps -o args= -p "$pid" 2>/dev/null || true)
+  if [ "$owner" = "$(id -un)" ] && printf '%s' "$cmd" | grep -q 'web.backend.app:app.*--port 8769'; then
+    kill "$pid" || true
+  fi
+done
 
 for i in $(seq 1 30); do
   SERVICE_STATE=$(systemctl is-active inforadar-web.service 2>/dev/null || true)

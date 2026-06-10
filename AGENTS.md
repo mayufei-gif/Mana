@@ -24,6 +24,17 @@
 4. 本地验证通过后再提交；若当前在 `nasradar-work` 工作分支，推送主仓库使用 `git push origin HEAD:main`。
 5. 只有推送到主仓库成功后，才运行 `tools/deploy_to_ubuntu.ps1`，将 Git 主线版本备份覆盖到 Ubuntu 网站运行目录。
 
+## 网站可见功能部署规则
+
+- 如果改动会影响浏览器里能看到的页面、按钮、项目入口、接口返回、登录状态或项目详情页，提交推送后必须立即部署到 Ubuntu。
+- 部署后必须验证对应项目入口，而不是只验证首页：
+  - InfoRadar：验证 `https://inforadar.mana-mana.top/#inforadar` 或相关 API。
+  - AgentHub：验证 `https://inforadar.mana-mana.top/#agenthub`。
+  - OpenClaw：验证 `https://inforadar.mana-mana.top/#openclaw`。
+  - CourseMind：验证 `https://inforadar.mana-mana.top/coursemind/`。
+- 验证通过后，最终回复要明确写出：最新 commit、是否已 push、是否已 deploy、验证过的 URL 和 HTTP 状态。
+- 只有纯文档、规则说明、不会影响网页运行的仓库维护改动，才可以只 push 不 deploy。
+
 ## 多 Codex 对话同步规则
 
 - 每个 Codex 对话开始工作前，都必须先同步 `origin/main`，不要基于过期本地文件直接改。
