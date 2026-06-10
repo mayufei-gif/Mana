@@ -94,7 +94,9 @@ app = FastAPI(title="InfoRadar Web", version="0.1.0")
 class VersionedStaticFiles(StaticFiles):
     async def get_response(self, path: str, scope) -> FileResponse:
         response = await super().get_response(path, scope)
-        response.headers["Cache-Control"] = "public, max-age=604800"
+        response.headers["Cache-Control"] = "no-store, no-cache, must-revalidate, max-age=0"
+        response.headers["Pragma"] = "no-cache"
+        response.headers["Expires"] = "0"
         return response
 
 
