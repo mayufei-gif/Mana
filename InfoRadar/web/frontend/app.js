@@ -572,7 +572,7 @@ function renderProjects() {
         showToast("已进入微信命令中心");
       } else if (target === "CourseMindNAS") {
         const url = button.dataset.url || "/coursemind/";
-        window.open(new URL(url, window.location.origin).href, "_blank", "noopener");
+        window.location.assign(url);
         showToast("正在打开 CourseMind 学习库");
       } else {
         showToast("这个项目位已经预留，后续可以接入");
