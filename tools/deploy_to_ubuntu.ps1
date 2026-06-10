@@ -116,6 +116,7 @@ systemctl show inforadar-web.service --property=MainPID --value 2>/dev/null || t
 '@
 
 $remoteScript = $remoteScript.Replace("__STAMP__", $stamp).Replace("__REMOTE_BASE__", $RemoteBase).Replace("__ARCHIVE_NAME__", $archiveName)
+$remoteScript = $remoteScript -replace "`r`n", "`n" -replace "`r", "`n"
 
 $utf8NoBom = [Text.UTF8Encoding]::new($false)
 [IO.File]::WriteAllText($remoteScriptLocal, $remoteScript, $utf8NoBom)
