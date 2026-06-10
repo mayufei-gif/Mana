@@ -41,7 +41,14 @@ tar -czf $archive `
   --exclude "NASAgentHub/secrets" `
   --exclude "NASAgentHub/previews" `
   --exclude "NASAgentHub/workspaces" `
-  -C $RepoRoot InfoRadar NASAgentHub README.md AGENTS.md .gitignore tools
+  --exclude "CourseMindNAS/.env" `
+  --exclude "CourseMindNAS/**/node_modules" `
+  --exclude "CourseMindNAS/data" `
+  --exclude "CourseMindNAS/uploads" `
+  --exclude "CourseMindNAS/videos" `
+  --exclude "CourseMindNAS/storage" `
+  --exclude "CourseMindNAS/runtime" `
+  -C $RepoRoot InfoRadar NASAgentHub CourseMindNAS README.md AGENTS.md .gitignore tools
 scp -T $archive "${SshTarget}:/tmp/$archiveName"
 
 $remoteScript = @'
@@ -56,7 +63,7 @@ rm -rf "$RELEASE_ROOT"
 mkdir -p "$RELEASE_ROOT" "$BACKUP_ROOT"
 tar -xzf "$ARCHIVE" -C "$RELEASE_ROOT"
 
-mkdir -p "$REMOTE_BASE/InfoRadar" "$REMOTE_BASE/NASAgentHub"
+mkdir -p "$REMOTE_BASE/InfoRadar" "$REMOTE_BASE/NASAgentHub" "$REMOTE_BASE/CourseMindNAS"
 
 for path in \
   "$REMOTE_BASE/InfoRadar/web" \
@@ -65,7 +72,8 @@ for path in \
   "$REMOTE_BASE/InfoRadar/sources" \
   "$REMOTE_BASE/NASAgentHub/coordination" \
   "$REMOTE_BASE/NASAgentHub/shared" \
-  "$REMOTE_BASE/NASAgentHub/agents"; do
+  "$REMOTE_BASE/NASAgentHub/agents" \
+  "$REMOTE_BASE/CourseMindNAS"; do
   if [ -e "$path" ]; then
     mkdir -p "$BACKUP_ROOT$(dirname "${path#$REMOTE_BASE}")"
     cp -a "$path" "$BACKUP_ROOT/${path#$REMOTE_BASE/}"
@@ -74,6 +82,7 @@ done
 
 cp -a "$RELEASE_ROOT/InfoRadar/." "$REMOTE_BASE/InfoRadar/"
 cp -a "$RELEASE_ROOT/NASAgentHub/." "$REMOTE_BASE/NASAgentHub/"
+cp -a "$RELEASE_ROOT/CourseMindNAS/." "$REMOTE_BASE/CourseMindNAS/"
 
 MAIN_PID=$(systemctl show inforadar-web.service --property=MainPID --value 2>/dev/null || echo 0)
 if [ -n "$MAIN_PID" ] && [ "$MAIN_PID" != "0" ]; then

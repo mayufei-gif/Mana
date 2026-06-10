@@ -15,6 +15,8 @@ __pycache__/
 *.py[cod]
 .pytest_cache/
 node_modules/
+*.tsbuildinfo
+*.tsbuildinfo
 
 # Runtime data and generated output
 InfoRadar/data/
