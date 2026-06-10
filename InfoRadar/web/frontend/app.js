@@ -1033,19 +1033,82 @@ function foloClickCount(key) {
   return (state.foloSourceTimeline || []).find((item) => item.key === key)?.count || 0;
 }
 
+function beijingParts(date = new Date()) {
+  const parts = new Intl.DateTimeFormat("zh-CN", {
+    timeZone: "Asia/Shanghai",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+    hour12: false,
+  }).formatToParts(date);
+  return Object.fromEntries(parts.filter((part) => part.type !== "literal").map((part) => [part.type, part.value]));
+}
+
+function beijingDateFromParts(parts, hour, minute) {
+  return new Date(Date.UTC(Number(parts.year), Number(parts.month) - 1, Number(parts.day), hour - 8, minute, 0));
+}
+
+function parseBackendUtcDate(value) {
+  if (!value) return null;
+  const raw = String(value).trim();
+  if (!raw) return null;
+  const normalized = raw.replace(" ", "T");
+  const hasZone = /(?:Z|[+-]\d{2}:?\d{2})$/i.test(normalized);
+  const date = new Date(hasZone ? normalized : `${normalized}Z`);
+  return Number.isNaN(date.getTime()) ? null : date;
+}
+
+function formatBeijingDateTime(value, withSeconds = false) {
+  const date = value instanceof Date ? value : parseBackendUtcDate(value);
+  if (!date) return "未记录";
+  const parts = beijingParts(date);
+  const time = withSeconds ? `${parts.hour}:${parts.minute}:${parts.second}` : `${parts.hour}:${parts.minute}`;
+  return `${parts.year}-${parts.month}-${parts.day} ${time}`;
+}
+
+function beijingInspectionWindow(now = new Date()) {
+  const slots = [
+    { hour: 8, minute: 30 },
+    { hour: 11, minute: 30 },
+    { hour: 17, minute: 30 },
+    { hour: 21, minute: 30 },
+  ];
+  const today = beijingParts(now);
+  const yesterday = beijingParts(new Date(beijingDateFromParts(today, 0, 0).getTime() - 60 * 1000));
+  const tomorrow = beijingParts(new Date(beijingDateFromParts(today, 23, 59).getTime() + 60 * 1000));
+  const todaySlots = slots.map((slot) => beijingDateFromParts(today, slot.hour, slot.minute));
+  const previousDaySlots = slots.map((slot) => beijingDateFromParts(yesterday, slot.hour, slot.minute));
+  const tomorrowSlots = slots.map((slot) => beijingDateFromParts(tomorrow, slot.hour, slot.minute));
+  let currentIndex = -1;
+  for (let index = 0; index < todaySlots.length; index += 1) {
+    if (todaySlots[index].getTime() <= now.getTime()) currentIndex = index;
+  }
+  let current;
+  let previous;
+  let next;
+  if (currentIndex === -1) {
+    current = previousDaySlots[previousDaySlots.length - 1];
+    previous = previousDaySlots[previousDaySlots.length - 2];
+    next = todaySlots[0];
+  } else {
+    current = todaySlots[currentIndex];
+    previous = currentIndex === 0 ? previousDaySlots[previousDaySlots.length - 1] : todaySlots[currentIndex - 1];
+    next = todaySlots[currentIndex + 1] || tomorrowSlots[0];
+  }
+  return {
+    previous,
+    current,
+    next,
+    label: `${formatBeijingDateTime(previous)} → ${formatBeijingDateTime(current)}`,
+    nextLabel: formatBeijingDateTime(next),
+  };
+}
+
 function inspectionIntervalLabel(health = state.latestHealth || {}) {
-  if (health.inspection_interval_label) return health.inspection_interval_label;
-  if (health.previous_finished_at || health.current_finished_at) {
-    return `${health.previous_finished_at || "首次记录"} → ${health.current_finished_at || health.last_finished_at || "等待巡检完成"}`;
-  }
-  const current = health.last_finished_at || health.daily_automation_finished_at || health.search_index_built_at || "";
-  const stored = loadLocalJson(FOLO_INSPECTION_INTERVAL_KEY, {});
-  if (current && stored.current !== current) {
-    const next = { previous: stored.current || stored.previous || "", current };
-    saveLocalJson(FOLO_INSPECTION_INTERVAL_KEY, next);
-    return `${next.previous || "首次记录"} → ${next.current}`;
-  }
-  return `${stored.previous || "首次记录"} → ${stored.current || current || "等待巡检完成"}`;
+  return beijingInspectionWindow().label;
 }
 
 function hiveMetrics(items = state.currentHiveItems || []) {
@@ -1882,12 +1945,16 @@ function renderRadarHealth() {
   const inventoryBase = Math.max(0, inventoryTotal - Number(metrics.totalNew || 0));
   const currentHiveBytes = state.currentHiveItems?.length ? textByteLength(JSON.stringify(state.currentHiveItems)) : 0;
   const inventorySizeText = health.search_index_size_text || formatBytes(health.search_index_size_bytes || health.search_index_bytes || currentHiveBytes);
+  const schedule = beijingInspectionWindow();
+  const lastActualFinished = health.daily_automation_finished_at || health.last_finished_at || health.search_index_built_at || "";
+  const lastActualAge = health.daily_automation_age_hours ?? health.age_hours;
   const lines = [
-    `今日全网检索：08:30 / 11:30 / 17:30 / 21:30 信息抓取；最近完成：${health.last_finished_at || "未记录"}（${formatAgeHours(health.age_hours)}）`,
+    `今日全网检索（北京时间）：08:30 / 11:30 / 17:30 / 21:30 信息抓取；当前窗口：${schedule.label}；下次抓取：${schedule.nextLabel}`,
+    `最近实际完成：${formatBeijingDateTime(lastActualFinished, true)}（${formatAgeHours(lastActualAge)}）；服务器原始时区：UTC，页面已换算为北京时间`,
     `Folo 直查源成功：${foloReady}/${foloTotal} 条，成功比例 ${formatRatio(foloRatio)}；仅统计可跳转 Folo 且能高亮定位的条目`,
     `当前卡片：此次新增 ${metrics.totalNew} 条；Folo 新增 ${metrics.foloNewIdCount} 条；Folo源条ID ${foloBaseIdCount}+${metrics.foloNewIdCount} 条；库存总条目 ${inventoryBase}+${metrics.totalNew} 条`,
-    `现库存总条目：${inventoryTotal} 条；完成时间：${health.search_index_built_at || health.last_finished_at || "未记录"}；总体积容量：${inventorySizeText}`,
-    `缓存兜底：${health.cache_fallback_used ? `使用，补入 ${health.cache_fallback_added_count || 0} 条` : "未使用"}；用户及启动每天自动更新三遍 InfoRadar`,
+    `现库存总条目：${inventoryTotal} 条；完成时间：${formatBeijingDateTime(health.search_index_built_at || health.last_finished_at, true)}；总体积容量：${inventorySizeText}`,
+    `缓存兜底：${health.cache_fallback_used ? `使用，补入 ${health.cache_fallback_added_count || 0} 条` : "未使用"}；用户级 crontab 每天自动更新四遍 InfoRadar`,
   ];
   if ((health.daily_automation_failed_count || 0) > 0) {
     lines.push(`失败步骤：${(health.daily_automation_failed_commands || []).join("、") || "未记录"}`);

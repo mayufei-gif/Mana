@@ -42,6 +42,7 @@ SEARCH_RESULT_CACHE: dict[tuple, tuple[float, dict]] = {}
 SEARCH_RESULT_CACHE_TTL_SECONDS = 300
 SEARCH_RESULT_CACHE_MAX_ITEMS = 128
 DAILY_AUTOMATION_STATE_JSON = ROOT / "logs" / "daily_automation_latest.json"
+INSPECTION_INTERVAL_STATE_JSON = ROOT / "data" / "folo_hive" / "inspection_interval.json"
 
 
 def now_iso() -> str:
@@ -61,6 +62,26 @@ def read_json(path: Path) -> dict:
         return json.loads(read_text(path))
     except Exception:
         return {}
+
+
+def inspection_interval_status(current: str) -> dict:
+    state = read_json(INSPECTION_INTERVAL_STATE_JSON)
+    previous = str(state.get("previous") or "").strip()
+    stored_current = str(state.get("current") or "").strip()
+    if current and current != stored_current:
+        next_state = {
+            "previous": stored_current or previous,
+            "current": current,
+            "updated_at": now_iso(),
+        }
+        INSPECTION_INTERVAL_STATE_JSON.parent.mkdir(parents=True, exist_ok=True)
+        INSPECTION_INTERVAL_STATE_JSON.write_text(json.dumps(next_state, ensure_ascii=False, indent=2), encoding="utf-8")
+        return next_state
+    return {
+        "previous": previous,
+        "current": stored_current or current,
+        "updated_at": str(state.get("updated_at") or ""),
+    }
 
 
 def size_text(size: int) -> str:
@@ -294,6 +315,7 @@ def latest_status() -> dict:
         age_hours = round((dt.datetime.now() - finished_dt).total_seconds() / 3600, 1)
     index_status = search_index_status()
     daily_status = daily_automation_status()
+    inspection_interval = inspection_interval_status(finished_at)
     return {
         "ok": True,
         "generated_at": now_iso(),
@@ -303,6 +325,9 @@ def latest_status() -> dict:
         "health": {
             "last_command": status.get("command") or "",
             "last_finished_at": finished_at,
+            "previous_finished_at": inspection_interval.get("previous", ""),
+            "current_finished_at": inspection_interval.get("current", ""),
+            "inspection_interval_label": f"{inspection_interval.get('previous') or '首次记录'} → {inspection_interval.get('current') or finished_at or '等待巡检完成'}",
             "age_hours": age_hours,
             "is_stale": bool(age_hours is not None and age_hours >= 30),
             "schedule_configured": schedule.get("configured", False),
