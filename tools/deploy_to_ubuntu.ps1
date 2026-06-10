@@ -78,8 +78,16 @@ cp -a "$RELEASE_ROOT/NASAgentHub/." "$REMOTE_BASE/NASAgentHub/"
 MAIN_PID=$(systemctl show inforadar-web.service --property=MainPID --value 2>/dev/null || echo 0)
 if [ -n "$MAIN_PID" ] && [ "$MAIN_PID" != "0" ]; then
   kill "$MAIN_PID" || true
-  sleep 5
 fi
+
+for i in $(seq 1 30); do
+  SERVICE_STATE=$(systemctl is-active inforadar-web.service 2>/dev/null || true)
+  MAIN_PID=$(systemctl show inforadar-web.service --property=MainPID --value 2>/dev/null || echo 0)
+  if [ "$SERVICE_STATE" = "active" ] && [ -n "$MAIN_PID" ] && [ "$MAIN_PID" != "0" ]; then
+    break
+  fi
+  sleep 1
+done
 
 echo "DEPLOYED_BACKUP=$BACKUP_ROOT"
 systemctl is-active inforadar-web.service 2>/dev/null || true
