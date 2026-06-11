@@ -1,0 +1,12 @@
+{
+  "version": "1.0",
+  "updated_at": "2026-06-11T00:00:00+08:00",
+  "language": "zh-CN",
+  "preferences": [
+    "默认使用中文沟通",
+    "涉及 NAS / Ubuntu 远程执行时优先使用 SSH 免密",
+    "sudo 免密必须单独验证；需要 sudo 密码时让用户本人输入",
+    "微信指令、OpenClaw、Codex App、Codex CLI 多端在线时必须通过队列去重，避免重复执行",
+    "任务分发要优先绑定 session_id，不只按路径判断"
+  ]
+}

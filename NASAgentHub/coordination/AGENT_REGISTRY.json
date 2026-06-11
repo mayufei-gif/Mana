@@ -1,0 +1,50 @@
+{
+  "version": "1.0",
+  "updated_at": "2026-06-11T00:00:00+08:00",
+  "items": [
+    {
+      "agent_id": "ubuntu-codex-cli-agent",
+      "name": "Ubuntu Codex CLI Agent",
+      "host": "ubuntu",
+      "agent_type": "codex-cli",
+      "login_type": "gpt-or-api",
+      "control_level": "full",
+      "workspace_root": "/home/mana",
+      "status": "idle",
+      "description": "负责 Ubuntu 项目开发、服务检查、命令执行、部署和日志分析"
+    },
+    {
+      "agent_id": "windows-api-codex-app-agent",
+      "name": "Windows API Codex App Agent",
+      "host": "windows",
+      "agent_type": "codex-app",
+      "login_type": "api",
+      "control_level": "full-if-app-server-available-else-queue",
+      "workspace_root": "G:\\E盘\\工作项目文件\\Git Hub克隆仓库集群\\Mana",
+      "status": "online",
+      "description": "Windows 电脑上的主力 Codex App Agent，通过 API 使用；路径可能与 GPT Agent 相同，但会话必须独立登记"
+    },
+    {
+      "agent_id": "windows-gpt-codex-app-agent",
+      "name": "Windows GPT Codex App Agent",
+      "host": "windows",
+      "agent_type": "codex-app",
+      "login_type": "gpt-account",
+      "control_level": "full-if-app-server-available-else-semi-auto",
+      "workspace_root": "G:\\E盘\\工作项目文件\\Git Hub克隆仓库集群\\Mana",
+      "status": "observed",
+      "description": "Windows 上通过 GPT 账号登录的 Codex App Agent；与 API Agent 可共用路径，但不能共用 agent_id 或 session_id"
+    },
+    {
+      "agent_id": "openclaw-agent",
+      "name": "OpenClaw 微信入口 Agent",
+      "host": "nas",
+      "agent_type": "wechat-bridge",
+      "login_type": "local",
+      "control_level": "bridge",
+      "workspace_root": "/home/mana/NASAgentHub",
+      "status": "running",
+      "description": "负责把微信命令转发给 AgentHub Supervisor，并把结果摘要回传微信"
+    }
+  ]
+}

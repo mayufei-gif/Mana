@@ -23,6 +23,7 @@ from email.utils import format_datetime, parsedate_to_datetime
 from pathlib import Path
 from datetime import datetime, timezone
 from html.parser import HTMLParser
+from typing import Any
 import xml.etree.ElementTree as ET
 from xml.sax.saxutils import escape as xml_escape
 
@@ -82,6 +83,7 @@ CODEX_WEB_WORKDIR = Path(os.environ.get("CODEX_WEB_WORKDIR", str(Path.home() / "
 CODEX_WEB_EXEC_TIMEOUT = int(os.environ.get("CODEX_WEB_EXEC_TIMEOUT", "600"))
 CODEX_WEB_JOBS: dict[str, dict] = {}
 CODEX_WEB_LOCK = threading.Lock()
+AGENTHUB_LOCK = threading.RLock()
 RUNTIME_ENV_FILE = Path(os.environ.get("INFORADAR_WEB_ENV_FILE", "/home/mana/inforadar-runtime/inforadar-web.env"))
 COURSEMIND_PREFIX = "/coursemind"
 COURSEMIND_FRONTEND_URL = os.environ.get("COURSEMIND_FRONTEND_URL", "http://100.78.3.45:8788").rstrip("/")
@@ -2136,6 +2138,453 @@ def run_agenthub_queue(args: list[str], timeout: int = 20) -> dict | list:
         raise HTTPException(status_code=500, detail=f"队列返回无法解析：{output}") from exc
 
 
+def agenthub_now() -> str:
+    return datetime.now(timezone.utc).astimezone().isoformat(timespec="seconds")
+
+
+def agenthub_items(data: Any) -> list[dict]:
+    if isinstance(data, list):
+        return [item for item in data if isinstance(item, dict)]
+    if not isinstance(data, dict):
+        return []
+    items = data.get("items")
+    if isinstance(items, list):
+        return [item for item in items if isinstance(item, dict)]
+    rows = []
+    for key, value in data.items():
+        if key in {"version", "updated_at", "items", "projects", "notes"}:
+            continue
+        if isinstance(value, dict):
+            row = dict(value)
+            row.setdefault("project_id", key)
+            rows.append(row)
+    projects = data.get("projects")
+    if isinstance(projects, dict):
+        for key, value in projects.items():
+            if isinstance(value, dict):
+                row = dict(value)
+                row.setdefault("project_id", key)
+                rows.append(row)
+    return rows
+
+
+def write_agenthub_json(root: Path, relative_path: str, data: dict) -> None:
+    path = root / relative_path
+    path.parent.mkdir(parents=True, exist_ok=True)
+    tmp = path.with_name(f".{path.name}.{uuid.uuid4().hex}.tmp")
+    tmp.write_text(json.dumps(data, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+    tmp.replace(path)
+
+
+def read_agenthub_text(root: Path, relative_path: str, default: str = "") -> str:
+    path = root / relative_path
+    if not path.exists():
+        return default
+    return path.read_text(encoding="utf-8", errors="replace")
+
+
+def append_agenthub_ndjson(root: Path, relative_path: str, item: dict) -> None:
+    path = root / relative_path
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with path.open("a", encoding="utf-8", newline="\n") as handle:
+        handle.write(json.dumps(item, ensure_ascii=False, separators=(",", ":")) + "\n")
+
+
+def agenthub_required_root() -> Path:
+    root = agenthub_root()
+    if root is None:
+        raise HTTPException(status_code=404, detail="AgentHub 目录不存在")
+    return root
+
+
+def agenthub_read_agents(root: Path) -> dict:
+    data = read_agenthub_json(root, "coordination/AGENT_REGISTRY.json")
+    if agenthub_items(data):
+        return data
+    legacy = read_agenthub_json(root, "coordination/AGENT_STATUS.json")
+    return legacy
+
+
+def agenthub_read_sessions(root: Path) -> dict:
+    return read_agenthub_json(root, "coordination/SESSION_REGISTRY.json")
+
+
+def agenthub_find_session(root: Path, session_id: str) -> dict:
+    target = str(session_id or "").strip()
+    if not target:
+        raise HTTPException(status_code=400, detail="session_id 不能为空")
+    for session in agenthub_items(agenthub_read_sessions(root)):
+        if str(session.get("session_id", "")).strip() == target:
+            return session
+    raise HTTPException(status_code=404, detail=f"未找到 AgentHub session：{target}")
+
+
+def agenthub_read_session_messages(root: Path, session_id: str, limit: int = 80) -> list[dict]:
+    path = root / "logs" / "SESSION_MESSAGES.ndjson"
+    if not path.exists():
+        return []
+    rows = []
+    for line in path.read_text(encoding="utf-8", errors="replace").splitlines():
+        line = line.strip()
+        if not line:
+            continue
+        try:
+            item = json.loads(line)
+        except json.JSONDecodeError:
+            continue
+        if str(item.get("session_id", "")) == session_id:
+            rows.append(item)
+    return rows[-max(1, min(limit, 300)) :]
+
+
+def update_agenthub_session(root: Path, session_id: str, patch: dict) -> dict:
+    data = agenthub_read_sessions(root)
+    items = agenthub_items(data)
+    for index, session in enumerate(items):
+        if str(session.get("session_id", "")) == session_id:
+            updated = dict(session)
+            updated.update(patch)
+            items[index] = updated
+            data["items"] = items
+            data["updated_at"] = agenthub_now()
+            write_agenthub_json(root, "coordination/SESSION_REGISTRY.json", data)
+            return updated
+    raise HTTPException(status_code=404, detail=f"未找到 AgentHub session：{session_id}")
+
+
+def upsert_agenthub_task(root: Path, task: dict) -> dict:
+    data = read_agenthub_json(root, "coordination/TASK_BOARD.json")
+    items = agenthub_items(data)
+    items.append(task)
+    data["version"] = str(data.get("version") or "1.0")
+    data["updated_at"] = agenthub_now()
+    data["items"] = items
+    write_agenthub_json(root, "coordination/TASK_BOARD.json", data)
+    return task
+
+
+def short_title(text: str, fallback: str = "AgentHub 会话消息") -> str:
+    cleaned = re.sub(r"\s+", " ", str(text or "")).strip()
+    if not cleaned:
+        return fallback
+    return cleaned[:80]
+
+
+def agenthub_record_event(root: Path, event_type: str, message: str, **fields: Any) -> dict:
+    event = {
+        "event_id": f"evt-{datetime.now(timezone.utc).strftime('%Y%m%d%H%M%S')}-{uuid.uuid4().hex[:8]}",
+        "event_type": event_type,
+        "message": message,
+        "created_at": agenthub_now(),
+    }
+    event.update({key: value for key, value in fields.items() if value is not None})
+    append_agenthub_ndjson(root, "logs/EVENT_LOG.ndjson", event)
+    return event
+
+
+def agenthub_send_message_to_session(
+    root: Path,
+    session_id: str,
+    message: str,
+    *,
+    source: str = "mcp",
+    task_title: str | None = None,
+    create_task: bool = True,
+) -> dict:
+    text = str(message or "").strip()
+    if not text:
+        raise HTTPException(status_code=400, detail="message 不能为空")
+    with AGENTHUB_LOCK:
+        session = agenthub_find_session(root, session_id)
+        now = agenthub_now()
+        task_id = None
+        task = None
+        if create_task:
+            task_id = f"task-{datetime.now(timezone.utc).strftime('%Y%m%d-%H%M%S')}-{uuid.uuid4().hex[:6]}"
+            task = {
+                "task_id": task_id,
+                "source": source,
+                "user_message": text,
+                "task_title": task_title or short_title(text),
+                "title": task_title or short_title(text),
+                "project_id": session.get("project_id"),
+                "assigned_agent": session.get("agent_id"),
+                "assigned_session": session.get("session_id"),
+                "owner_agent": session.get("agent_id"),
+                "host": session.get("host"),
+                "workspace_path_windows": session.get("workspace_path_windows"),
+                "workspace_path_ubuntu": session.get("workspace_path_ubuntu"),
+                "status": "assigned",
+                "priority": "normal",
+                "created_at": now,
+                "updated_at": now,
+                "codex_prompt": text,
+                "output_files": [],
+                "verify_status": "pending",
+                "delivery": "bridge-pending",
+            }
+            upsert_agenthub_task(root, task)
+        message_id = f"msg-{datetime.now(timezone.utc).strftime('%Y%m%d%H%M%S')}-{uuid.uuid4().hex[:8]}"
+        row = {
+            "message_id": message_id,
+            "session_id": session.get("session_id"),
+            "agent_id": session.get("agent_id"),
+            "role": "supervisor",
+            "content": text,
+            "source": source,
+            "task_id": task_id,
+            "status": "queued",
+            "delivery": "bridge-pending",
+            "created_at": now,
+        }
+        append_agenthub_ndjson(root, "logs/SESSION_MESSAGES.ndjson", row)
+        updated_session = update_agenthub_session(
+            root,
+            session_id,
+            {
+                "status": "queued",
+                "current_task_id": task_id or session.get("current_task_id"),
+                "last_message_summary": short_title(text),
+                "last_heartbeat": now,
+                "updated_at": now,
+            },
+        )
+        agenthub_record_event(
+            root,
+            "session_message_queued",
+            "Message queued for AgentHub session",
+            source=source,
+            project_id=session.get("project_id"),
+            agent_id=session.get("agent_id"),
+            session_id=session_id,
+            task_id=task_id,
+        )
+    return {
+        "ok": True,
+        "session_id": session_id,
+        "agent_id": session.get("agent_id"),
+        "message_id": message_id,
+        "task_id": task_id,
+        "status": "sent-or-queued",
+        "delivery": "bridge-pending",
+        "session": updated_session,
+        "task": task,
+        "note": "第一阶段已写入 AgentHub 队列/日志；等待 Windows Bridge 或人工回填，不声明已投递到 Codex App 私有窗口。",
+    }
+
+
+def agenthub_current_state(root: Path) -> dict:
+    data = read_agenthub_json(root, "memory/CURRENT_STATE.json")
+    if data.get("items") == [] and not (root / "memory" / "CURRENT_STATE.json").exists():
+        return {
+            "system_name": "Mana AI 公司总控系统",
+            "current_phase": "AgentHub MCP 第一阶段接入",
+            "active_focus": "让 GPT 应用通过 /mcp 列出 Agent/Session，并向指定 session 写入任务和消息日志",
+            "next_best_action": "在 GPT 应用中配置 MCP URL 后测试 list_sessions 与 send_message_to_session",
+        }
+    return data
+
+
+def agenthub_hermes_bootstrap(root: Path) -> dict:
+    current_state = agenthub_current_state(root)
+    user_profile = read_agenthub_json(root, "memory/USER_PROFILE.json")
+    agents = agenthub_items(agenthub_read_agents(root))
+    sessions = agenthub_items(agenthub_read_sessions(root))
+    tasks = agenthub_items(read_agenthub_json(root, "coordination/TASK_BOARD.json"))
+    project_notes = {
+        "agenthub": read_agenthub_text(root, "memory/projects/agenthub.md").strip(),
+        "inforadar": read_agenthub_text(root, "memory/projects/inforadar.md").strip(),
+        "coursemind": read_agenthub_text(root, "memory/projects/coursemind.md").strip(),
+        "openclaw": read_agenthub_text(root, "memory/projects/openclaw.md").strip(),
+    }
+    summary = {
+        "system_name": current_state.get("system_name") or "Mana AI 公司总控系统",
+        "architecture": "ChatGPT 总管 Agent -> AgentHub MCP Server -> AgentHub Supervisor -> Hermes -> 下属 Agent / Codex 会话",
+        "user_preferences": user_profile,
+        "current_state": current_state,
+        "agents": agents,
+        "sessions": sessions,
+        "active_tasks": [task for task in tasks if str(task.get("status", "")).lower() not in {"done", "verified", "failed"}][-20:],
+        "recent_tasks": tasks[-20:],
+        "project_context": project_notes,
+        "available_mcp_tools": [tool["name"] for tool in agenthub_mcp_tools()],
+        "important_notes": [
+            "Windows API Codex App Agent 是当前 Windows 主力 Agent。",
+            "Windows API Codex App Agent 与 Windows GPT Codex App Agent 路径可能相同，但必须用不同 agent_id 和 session_id 区分。",
+            "第一阶段 send_message_to_session 写入任务和消息日志，delivery=bridge-pending，不假装已经控制 Codex App 私有窗口。",
+            "GPT 应用配置 MCP 后，优先验证 list_agents、list_sessions、send_message_to_session、read_session_messages。",
+        ],
+    }
+    return summary
+
+
+def agenthub_tool_text(payload: Any) -> dict:
+    return {"content": [{"type": "text", "text": json.dumps(payload, ensure_ascii=False, indent=2)}]}
+
+
+def agenthub_mcp_tools() -> list[dict]:
+    string_schema = {"type": "string"}
+    return [
+        {
+            "name": "list_agents",
+            "description": "列出 Mana AgentHub 当前登记的所有员工 Agent。",
+            "inputSchema": {"type": "object", "properties": {}, "additionalProperties": False},
+        },
+        {
+            "name": "list_sessions",
+            "description": "列出所有具体 Codex / CLI / Bridge 会话，注意相同路径不代表相同 session。",
+            "inputSchema": {"type": "object", "properties": {}, "additionalProperties": False},
+        },
+        {
+            "name": "read_session",
+            "description": "读取指定 AgentHub session 的登记信息。",
+            "inputSchema": {"type": "object", "properties": {"session_id": string_schema}, "required": ["session_id"]},
+        },
+        {
+            "name": "send_message_to_session",
+            "description": "向指定 session 写入主管消息并创建桥接待发送任务。",
+            "inputSchema": {
+                "type": "object",
+                "properties": {"session_id": string_schema, "message": string_schema, "task_title": string_schema},
+                "required": ["session_id", "message"],
+            },
+        },
+        {
+            "name": "dispatch_task_to_session",
+            "description": "强制把任务派发给指定 session，并写入 TASK_BOARD 与 SESSION_MESSAGES。",
+            "inputSchema": {
+                "type": "object",
+                "properties": {"session_id": string_schema, "task_title": string_schema, "message": string_schema},
+                "required": ["session_id", "task_title", "message"],
+            },
+        },
+        {
+            "name": "read_session_messages",
+            "description": "读取指定 session 的最近消息日志。",
+            "inputSchema": {
+                "type": "object",
+                "properties": {"session_id": string_schema, "limit": {"type": "integer", "minimum": 1, "maximum": 300}},
+                "required": ["session_id"],
+            },
+        },
+        {
+            "name": "read_task_board",
+            "description": "读取 AgentHub TASK_BOARD 任务队列。",
+            "inputSchema": {"type": "object", "properties": {}, "additionalProperties": False},
+        },
+        {
+            "name": "get_path_map",
+            "description": "读取 Windows / Ubuntu / NAS 项目路径映射。",
+            "inputSchema": {"type": "object", "properties": {}, "additionalProperties": False},
+        },
+        {
+            "name": "hermes_bootstrap",
+            "description": "返回新 GPT 对话接入 AgentHub 所需的 Hermes 当前局面摘要。",
+            "inputSchema": {"type": "object", "properties": {}, "additionalProperties": False},
+        },
+        {
+            "name": "hermes_get_current_state",
+            "description": "读取 Hermes CURRENT_STATE.json。",
+            "inputSchema": {"type": "object", "properties": {}, "additionalProperties": False},
+        },
+    ]
+
+
+def agenthub_call_tool(name: str, arguments: dict | None = None) -> dict:
+    args = arguments or {}
+    root = agenthub_required_root()
+    if name == "list_agents":
+        return agenthub_tool_text({"ok": True, "agents": agenthub_items(agenthub_read_agents(root))})
+    if name == "list_sessions":
+        return agenthub_tool_text({"ok": True, "sessions": agenthub_items(agenthub_read_sessions(root))})
+    if name == "read_session":
+        session_id = str(args.get("session_id") or "")
+        return agenthub_tool_text({"ok": True, "session": agenthub_find_session(root, session_id)})
+    if name == "send_message_to_session":
+        return agenthub_tool_text(
+            agenthub_send_message_to_session(
+                root,
+                str(args.get("session_id") or ""),
+                str(args.get("message") or ""),
+                task_title=str(args.get("task_title") or "") or None,
+                source="mcp",
+            )
+        )
+    if name == "dispatch_task_to_session":
+        return agenthub_tool_text(
+            agenthub_send_message_to_session(
+                root,
+                str(args.get("session_id") or ""),
+                str(args.get("message") or ""),
+                task_title=str(args.get("task_title") or "") or None,
+                source="mcp-dispatch",
+            )
+        )
+    if name == "read_session_messages":
+        session_id = str(args.get("session_id") or "")
+        agenthub_find_session(root, session_id)
+        return agenthub_tool_text(
+            {
+                "ok": True,
+                "session_id": session_id,
+                "messages": agenthub_read_session_messages(root, session_id, int(args.get("limit") or 80)),
+            }
+        )
+    if name == "read_task_board":
+        return agenthub_tool_text({"ok": True, "tasks": agenthub_items(read_agenthub_json(root, "coordination/TASK_BOARD.json"))})
+    if name == "get_path_map":
+        return agenthub_tool_text({"ok": True, "path_map": read_agenthub_json(root, "coordination/PATH_MAP.json")})
+    if name == "hermes_bootstrap":
+        return agenthub_tool_text({"ok": True, "bootstrap": agenthub_hermes_bootstrap(root)})
+    if name == "hermes_get_current_state":
+        return agenthub_tool_text({"ok": True, "current_state": agenthub_current_state(root)})
+    raise HTTPException(status_code=404, detail=f"未知 MCP 工具：{name}")
+
+
+def mcp_success(request_id: Any, result: dict) -> dict:
+    return {"jsonrpc": "2.0", "id": request_id, "result": result}
+
+
+def mcp_error(request_id: Any, code: int, message: str) -> dict:
+    return {"jsonrpc": "2.0", "id": request_id, "error": {"code": code, "message": message}}
+
+
+def handle_mcp_rpc(payload: dict) -> dict | None:
+    request_id = payload.get("id")
+    method = str(payload.get("method") or "")
+    params = payload.get("params") if isinstance(payload.get("params"), dict) else {}
+    try:
+        if method == "initialize":
+            requested_version = str(params.get("protocolVersion") or "2024-11-05")
+            return mcp_success(
+                request_id,
+                {
+                    "protocolVersion": requested_version,
+                    "capabilities": {"tools": {"listChanged": False}},
+                    "serverInfo": {"name": "mana-agenthub", "version": "0.1.0"},
+                },
+            )
+        if method == "notifications/initialized":
+            return None
+        if method == "ping":
+            return mcp_success(request_id, {})
+        if method == "tools/list":
+            return mcp_success(request_id, {"tools": agenthub_mcp_tools()})
+        if method == "tools/call":
+            tool_name = str(params.get("name") or "")
+            arguments = params.get("arguments") if isinstance(params.get("arguments"), dict) else {}
+            return mcp_success(request_id, agenthub_call_tool(tool_name, arguments))
+        if method == "resources/list":
+            return mcp_success(request_id, {"resources": []})
+        if method == "prompts/list":
+            return mcp_success(request_id, {"prompts": []})
+        return mcp_error(request_id, -32601, f"Method not found: {method}")
+    except HTTPException as exc:
+        return mcp_error(request_id, -32000, str(exc.detail))
+    except Exception as exc:
+        return mcp_error(request_id, -32603, str(exc))
+
+
 def run_status_command(args: list[str], timeout: int = 4) -> tuple[int, str]:
     try:
         proc = subprocess.run(
@@ -3368,6 +3817,155 @@ def get_agenthub() -> dict:
             ]
         ),
     }
+
+
+@app.get("/api/agenthub/overview")
+def get_agenthub_overview(request: Request) -> dict:
+    require_agenthub_queue_access(request)
+    root = agenthub_required_root()
+    agents = agenthub_items(agenthub_read_agents(root))
+    sessions = agenthub_items(agenthub_read_sessions(root))
+    tasks = agenthub_items(read_agenthub_json(root, "coordination/TASK_BOARD.json"))
+    active_tasks = [task for task in tasks if str(task.get("status", "")).lower() not in {"done", "verified", "failed"}]
+    return {
+        "ok": True,
+        "root": str(root),
+        "agent_count": len(agents),
+        "session_count": len(sessions),
+        "task_count": len(tasks),
+        "active_task_count": len(active_tasks),
+        "updated_at": agenthub_now(),
+    }
+
+
+@app.get("/api/agenthub/agents")
+def get_agenthub_agents(request: Request) -> dict:
+    require_agenthub_queue_access(request)
+    root = agenthub_required_root()
+    data = agenthub_read_agents(root)
+    return {"ok": True, "root": str(root), "agents": agenthub_items(data), "data": data}
+
+
+@app.get("/api/agenthub/sessions")
+def get_agenthub_sessions(request: Request) -> dict:
+    require_agenthub_queue_access(request)
+    root = agenthub_required_root()
+    data = agenthub_read_sessions(root)
+    return {"ok": True, "root": str(root), "sessions": agenthub_items(data), "data": data}
+
+
+@app.get("/api/agenthub/sessions/{session_id}")
+def get_agenthub_session(session_id: str, request: Request) -> dict:
+    require_agenthub_queue_access(request)
+    root = agenthub_required_root()
+    session = agenthub_find_session(root, session_id)
+    return {"ok": True, "session": session}
+
+
+@app.get("/api/agenthub/sessions/{session_id}/messages")
+def get_agenthub_session_messages(session_id: str, request: Request, limit: int = Query(default=80, ge=1, le=300)) -> dict:
+    require_agenthub_queue_access(request)
+    root = agenthub_required_root()
+    agenthub_find_session(root, session_id)
+    return {"ok": True, "session_id": session_id, "messages": agenthub_read_session_messages(root, session_id, limit)}
+
+
+@app.post("/api/agenthub/sessions/{session_id}/messages")
+async def post_agenthub_session_message(session_id: str, request: Request) -> dict:
+    require_agenthub_queue_access(request)
+    try:
+        payload = await request.json()
+    except Exception as exc:
+        raise HTTPException(status_code=400, detail="请求格式错误") from exc
+    root = agenthub_required_root()
+    return agenthub_send_message_to_session(
+        root,
+        session_id,
+        str(payload.get("message") or payload.get("text") or ""),
+        task_title=str(payload.get("task_title") or payload.get("title") or "") or None,
+        source=str(payload.get("source") or "api"),
+    )
+
+
+@app.get("/api/agenthub/tasks")
+def get_agenthub_tasks(request: Request) -> dict:
+    require_agenthub_queue_access(request)
+    root = agenthub_required_root()
+    data = read_agenthub_json(root, "coordination/TASK_BOARD.json")
+    return {"ok": True, "root": str(root), "tasks": agenthub_items(data), "data": data}
+
+
+@app.post("/api/agenthub/tasks")
+async def post_agenthub_task(request: Request) -> dict:
+    require_agenthub_queue_access(request)
+    try:
+        payload = await request.json()
+    except Exception as exc:
+        raise HTTPException(status_code=400, detail="请求格式错误") from exc
+    session_id = str(payload.get("session_id") or payload.get("assigned_session") or "").strip()
+    if not session_id:
+        raise HTTPException(status_code=400, detail="第一阶段必须指定 session_id")
+    root = agenthub_required_root()
+    return agenthub_send_message_to_session(
+        root,
+        session_id,
+        str(payload.get("message") or payload.get("codex_prompt") or payload.get("user_message") or ""),
+        task_title=str(payload.get("task_title") or payload.get("title") or "") or None,
+        source=str(payload.get("source") or "api-task"),
+    )
+
+
+@app.get("/api/agenthub/path-map")
+def get_agenthub_path_map(request: Request) -> dict:
+    require_agenthub_queue_access(request)
+    root = agenthub_required_root()
+    data = read_agenthub_json(root, "coordination/PATH_MAP.json")
+    return {"ok": True, "root": str(root), "path_map": data, "items": agenthub_items(data)}
+
+
+@app.get("/api/agenthub/hermes/bootstrap")
+def get_agenthub_hermes_bootstrap(request: Request) -> dict:
+    require_agenthub_queue_access(request)
+    root = agenthub_required_root()
+    return {"ok": True, "bootstrap": agenthub_hermes_bootstrap(root)}
+
+
+@app.get("/api/agenthub/hermes/current-state")
+def get_agenthub_hermes_current_state(request: Request) -> dict:
+    require_agenthub_queue_access(request)
+    root = agenthub_required_root()
+    return {"ok": True, "current_state": agenthub_current_state(root)}
+
+
+@app.get("/mcp")
+def get_mcp(request: Request) -> dict:
+    require_agenthub_queue_access(request)
+    return {
+        "ok": True,
+        "name": "mana-agenthub",
+        "transport": "streamable-http-json-rpc",
+        "tools": [tool["name"] for tool in agenthub_mcp_tools()],
+    }
+
+
+@app.post("/mcp")
+async def post_mcp(request: Request) -> Response:
+    require_agenthub_queue_access(request)
+    try:
+        payload = await request.json()
+    except Exception as exc:
+        raise HTTPException(status_code=400, detail="请求格式错误") from exc
+    if isinstance(payload, list):
+        responses = [response for item in payload if isinstance(item, dict) for response in [handle_mcp_rpc(item)] if response is not None]
+        if not responses:
+            return Response(status_code=202)
+        return JSONResponse(responses)
+    if not isinstance(payload, dict):
+        return JSONResponse(mcp_error(None, -32600, "Invalid Request"), status_code=400)
+    response = handle_mcp_rpc(payload)
+    if response is None:
+        return Response(status_code=202)
+    return JSONResponse(response)
 
 
 def add_cli_arg(args: list[str], flag: str, value: object | None) -> None:
