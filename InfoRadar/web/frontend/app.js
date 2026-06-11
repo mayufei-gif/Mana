@@ -20,6 +20,7 @@ const FOLO_SOURCE_TIMELINE_KEY = "folo_hive_source_timeline_v1";
 const FOLO_MANUAL_ENTRIES_KEY = "folo_hive_manual_entries_v1";
 const FOLO_RESOURCE_POOL_KEY = "folo_hive_resource_pool_v1";
 const FOLO_INSPECTION_INTERVAL_KEY = "folo_hive_inspection_interval_v1";
+const AGENTHUB_SUPERVISOR_SESSION_ID = "agenthub-supervisor";
 const OPENCLAW_COMMAND_PRESETS = [
   {
     name: "主管待定",
@@ -131,6 +132,9 @@ const state = {
   agenthub: null,
   selectedAgentId: "",
   selectedAgentHubSessionId: "",
+  agenthubDraftText: {},
+  agenthubDraftAttachments: {},
+  agenthubSending: false,
   agentRefreshTimer: null,
   headerCollapseTimer: null,
   lastHeaderScrollY: 0,
@@ -662,7 +666,7 @@ function statusText(value) {
     online: "在线",
     mvp: "MVP",
     "bridge-pending": "等待 Bridge",
-    "handoff-ready": "Handoff 就绪",
+    "handoff-ready": "交接就绪",
     "manual-handoff": "人工交接",
     "manual-copied": "已复制",
     "manual-reply": "人工回填",
@@ -860,7 +864,7 @@ function renderAgentDetail(agent) {
   `;
 }
 
-function selectAgentHubSession(sessionId, scroll = true) {
+function selectAgentHubSession(sessionId, scroll = false) {
   state.selectedAgentHubSessionId = sessionId || "";
   renderAgentHubSessions(state.agenthub || {});
   if (scroll) {
@@ -873,7 +877,7 @@ function agentHubSessionMessages(sessionId) {
 }
 
 function latestAgentHubHandoff(messages) {
-  return (messages || []).find((item) => item.handoff_path || item.handoff_content || item.delivery === "manual-handoff");
+  return (messages || []).slice().reverse().find((item) => item.handoff_path || item.handoff_content || item.delivery === "manual-handoff");
 }
 
 function agentHubHandoffText(message) {
@@ -884,90 +888,230 @@ function agentHubHandoffText(message) {
   );
 }
 
+function agentHubDisplaySessions(data) {
+  const sessions = Array.isArray(data.sessions) ? data.sessions : [];
+  const hasSupervisor = sessions.some((session) => {
+    const text = `${session.session_id || ""} ${session.display_name || ""} ${session.agent_id || ""}`.toLowerCase();
+    return text.includes("supervisor") || text.includes("hermes") || text.includes("主管");
+  });
+  if (hasSupervisor) return sessions;
+  return [
+    {
+      session_id: AGENTHUB_SUPERVISOR_SESSION_ID,
+      display_name: "主管",
+      agent_id: "agenthub-supervisor",
+      login_type: "router",
+      status: "planned",
+      project_id: "AgentHub",
+      control_level: "dispatch",
+      virtual: true,
+    },
+    ...sessions,
+  ];
+}
+
+function agentHubDraftFiles(sessionId) {
+  return state.agenthubDraftAttachments[sessionId] || [];
+}
+
+function formatAgentHubFileSize(size) {
+  const value = Number(size) || 0;
+  if (value < 1024) return `${value} B`;
+  if (value < 1024 * 1024) return `${(value / 1024).toFixed(1)} KB`;
+  return `${(value / 1024 / 1024).toFixed(1)} MB`;
+}
+
+function agentHubSessionHandle(session) {
+  const text = `${session.session_id || ""} ${session.display_name || ""} ${session.agent_id || ""}`.toLowerCase();
+  if (session.virtual || session.session_id === AGENTHUB_SUPERVISOR_SESSION_ID) return "@主管";
+  if (text.includes("openclaw") || text.includes("wechat")) return "@openclaw";
+  if (text.includes("windows") || text.includes("win-")) return "@win codexapp";
+  if (text.includes("ubuntu") || text.includes("cli")) return "@ubuntu";
+  if (text.includes("gpt")) return "@gpt";
+  return `@${session.agent_id || session.session_id || "agent"}`;
+}
+
+function agentHubGroupLabel(session) {
+  const text = `${session.session_id || ""} ${session.display_name || ""} ${session.agent_id || ""} ${session.host || ""}`.toLowerCase();
+  if (session.virtual || session.session_id === AGENTHUB_SUPERVISOR_SESSION_ID) return "总管";
+  if (text.includes("openclaw") || text.includes("wechat")) return "OpenClaw 微信入口";
+  if (text.includes("windows") || text.includes("win-")) return "Windows Codex App";
+  if (text.includes("ubuntu") || text.includes("cli")) return "Ubuntu Codex CLI";
+  if (text.includes("gpt")) return "GPT 应用";
+  return session.host || session.login_type || "其它会话";
+}
+
+function agentHubMessageClass(message) {
+  const role = String(message.role || "").toLowerCase();
+  if (["supervisor", "user", "human"].includes(role)) return "user";
+  if (["codex", "assistant", "agent"].includes(role)) return "assistant";
+  return "event";
+}
+
+function agentHubMessageLabel(message) {
+  const role = String(message.role || "message").toLowerCase();
+  if (role === "supervisor") return "主管";
+  if (role === "codex") return "Codex";
+  if (role === "user") return "你";
+  return role;
+}
+
+function renderAgentHubThreadGroups(sessions) {
+  const groups = [];
+  sessions.forEach((session) => {
+    const label = agentHubGroupLabel(session);
+    let group = groups.find((item) => item.label === label);
+    if (!group) {
+      group = { label, sessions: [] };
+      groups.push(group);
+    }
+    group.sessions.push(session);
+  });
+  return groups
+    .map(
+      (group) => `
+        <section class="agenthub-thread-group">
+          <div class="agenthub-thread-group-title">${escapeHtml(group.label)}</div>
+          ${group.sessions
+            .map((session) => {
+              const id = session.session_id || "";
+              const active = id === state.selectedAgentHubSessionId;
+              const messages = agentHubSessionMessages(id);
+              const latest = messages[messages.length - 1];
+              return `
+                <button class="agenthub-thread-item ${active ? "selected" : ""} ${session.virtual ? "virtual" : ""}" data-agenthub-session="${escapeHtml(id)}" type="button">
+                  <span class="agenthub-thread-handle">${escapeHtml(agentHubSessionHandle(session))}</span>
+                  <strong>${escapeHtml(session.display_name || id)}</strong>
+                  <small>${escapeHtml(statusText(session.status))} · ${escapeHtml(session.project_id || "未分配")}</small>
+                  <span>${escapeHtml(latest?.content || session.last_message_summary || session.agent_id || "等待消息")}</span>
+                </button>
+              `;
+            })
+            .join("")}
+        </section>
+      `
+    )
+    .join("");
+}
+
+function renderAgentHubMessages(session, messages) {
+  if (session.virtual) {
+    return `
+      <div class="codex-message event">
+        <div class="codex-message-top"><span>系统 · 待绑定</span><span></span></div>
+        <div class="codex-message-text">主管入口还没有独立的 AgentHub session。当前可以在任一具体会话里用 @主管 发起调度任务。</div>
+      </div>
+    `;
+  }
+  if (!messages.length) {
+    return `
+      <div class="codex-message event">
+        <div class="codex-message-top"><span>系统 · 空会话</span><span></span></div>
+        <div class="codex-message-text">暂无消息。</div>
+      </div>
+    `;
+  }
+  return messages
+    .map((message) => {
+      const hasHandoff = message.handoff_path || message.handoff_content || message.delivery === "manual-handoff";
+      return `
+        <div class="codex-message ${escapeHtml(agentHubMessageClass(message))}">
+          <div class="codex-message-top">
+            <span>${escapeHtml(agentHubMessageLabel(message))} · ${escapeHtml(statusText(message.status))} · ${escapeHtml(statusText(message.delivery))}</span>
+            <span>${escapeHtml(message.created_at || "")}</span>
+          </div>
+          <div class="codex-message-text">${escapeHtml(message.content || "")}</div>
+          ${message.handoff_path ? `<div class="codex-message-text"><code>${escapeHtml(message.handoff_path)}</code></div>` : ""}
+          ${
+            hasHandoff
+              ? `<div class="agenthub-message-actions"><button class="ghost small" type="button" data-agenthub-copy-handoff="${escapeHtml(message.message_id || "")}">复制交接</button></div>`
+              : ""
+          }
+        </div>
+      `;
+    })
+    .join("");
+}
+
+function renderAgentHubComposer(session) {
+  const sessionId = session.session_id || "";
+  const draftText = state.agenthubDraftText[sessionId] || "";
+  const draftFiles = agentHubDraftFiles(sessionId);
+  const disabled = session.virtual ? "disabled" : "";
+  const fileRows = draftFiles.length
+    ? draftFiles
+        .map(
+          (file, index) => `
+            <span class="agenthub-file-chip">
+              <span>${escapeHtml(file.name || "未命名文件")} · ${escapeHtml(formatAgentHubFileSize(file.size))}</span>
+              <button type="button" data-agenthub-remove-file="${escapeHtml(String(index))}" data-agenthub-file-session="${escapeHtml(sessionId)}" aria-label="移除附件">×</button>
+            </span>
+          `
+        )
+        .join("")
+    : "";
+  return `
+    <form class="agenthub-chat-composer" data-agenthub-message-session="${escapeHtml(sessionId)}">
+      <div class="agenthub-draft-files ${draftFiles.length ? "" : "empty"}">${fileRows}</div>
+      <div class="agenthub-composer-row">
+        <button class="agenthub-icon-button" type="button" data-agenthub-attach="1" title="添加文件" ${disabled}>+</button>
+        <input class="agenthub-file-input" data-agenthub-file-input="${escapeHtml(sessionId)}" type="file" multiple ${disabled} />
+        <textarea data-agenthub-draft-input="${escapeHtml(sessionId)}" rows="2" placeholder="${session.virtual ? "主管会话等待后端绑定" : "@主管、@openclaw 或直接输入任务"}" ${disabled}>${escapeHtml(draftText)}</textarea>
+        <button type="submit" ${disabled || state.agenthubSending ? "disabled" : ""}>发送</button>
+      </div>
+      ${
+        draftFiles.length
+          ? `<div class="agenthub-composer-note">附件已保留在本地草稿；当前队列接口只发送文字。</div>`
+          : ""
+      }
+    </form>
+  `;
+}
+
 function renderAgentHubSessions(data) {
   const wall = $("#agentSessionWall");
   const detail = $("#agentSessionDetail");
   if (!wall || !detail) return;
-  const sessions = data.sessions || [];
+  const sessions = agentHubDisplaySessions(data);
+  const realSessions = sessions.filter((session) => !session.virtual);
   if (!state.selectedAgentHubSessionId && sessions.length) {
-    state.selectedAgentHubSessionId = sessions[0].session_id || "";
+    state.selectedAgentHubSessionId = realSessions[0]?.session_id || sessions[0].session_id || "";
   }
   if (state.selectedAgentHubSessionId && !sessions.some((session) => session.session_id === state.selectedAgentHubSessionId)) {
-    state.selectedAgentHubSessionId = sessions[0]?.session_id || "";
+    state.selectedAgentHubSessionId = realSessions[0]?.session_id || sessions[0]?.session_id || "";
   }
   wall.innerHTML = sessions.length
-    ? sessions
-        .map((session) => {
-          const id = session.session_id || "";
-          const active = id === state.selectedAgentHubSessionId;
-          return `
-            <div class="item agent-session-card ${active ? "selected" : ""}" data-agenthub-session="${escapeHtml(id)}" role="button" tabindex="0">
-              <div class="item-title">${escapeHtml(session.display_name || id)}</div>
-              <div class="item-meta">${escapeHtml(id)} · ${escapeHtml(session.agent_id || "未绑定")} · ${escapeHtml(session.login_type || "unknown")}</div>
-              <div class="item-meta">状态：${escapeHtml(statusText(session.status))} · 项目：${escapeHtml(session.project_id || "未分配")}</div>
-              <div class="item-meta">控制：${escapeHtml(session.control_level || "未声明")}</div>
-              <code>${escapeHtml(session.workspace_path_windows || session.workspace_path_ubuntu || "未登记路径")}</code>
-            </div>
-          `;
-        })
-        .join("")
-    : `<div class="item"><div class="item-meta">暂无 session 注册记录</div></div>`;
+    ? renderAgentHubThreadGroups(sessions)
+    : `<div class="agenthub-empty-state">暂无 session 注册记录</div>`;
 
   const session = sessions.find((item) => item.session_id === state.selectedAgentHubSessionId);
   if (!session) {
-    detail.innerHTML = `<div class="item"><div class="item-meta">选择一个 Codex 会话查看 handoff 和回填入口。</div></div>`;
+    detail.innerHTML = `<div class="agenthub-empty-state">选择一个会话。</div>`;
     return;
   }
-  const messages = agentHubSessionMessages(session.session_id).slice(-12).reverse();
-  const handoff = latestAgentHubHandoff(messages);
+  const messages = agentHubSessionMessages(session.session_id).slice(-80);
+  const latestHandoff = latestAgentHubHandoff(messages);
   detail.innerHTML = `
-    <div class="item agent-session-detail-card">
-      <div class="item-title">${escapeHtml(session.display_name || session.session_id)}</div>
-      <div class="item-meta">session：${escapeHtml(session.session_id)} · agent：${escapeHtml(session.agent_id || "")}</div>
-      <div class="item-meta">thread_ref：${escapeHtml(session.thread_ref || "pending-bind")} · 当前任务：${escapeHtml(session.current_task_id || "无")}</div>
-      <div class="item-meta">Windows：${escapeHtml(session.workspace_path_windows || "未登记")}</div>
-      <div class="item-meta">Ubuntu：${escapeHtml(session.workspace_path_ubuntu || "未登记")}</div>
-    </div>
-    <div class="item handoff-panel ${handoff ? "" : "muted-panel"}">
-      <div class="item-title">最新 Handoff</div>
-      <div class="item-meta">状态：${escapeHtml(statusText(handoff?.status || "无"))} · 投递：${escapeHtml(statusText(handoff?.delivery || "无"))}</div>
-      <div class="item-meta">文件：${escapeHtml(handoff?.handoff_path || "当前没有 handoff 文件")}</div>
-      <div class="item-actions">
-        <button class="secondary" type="button" data-agenthub-copy-handoff="${escapeHtml(handoff?.message_id || "")}" ${handoff ? "" : "disabled"}>复制 handoff 内容</button>
+    <header class="agenthub-chat-header">
+      <div>
+        <p class="eyebrow">${escapeHtml(agentHubSessionHandle(session))}</p>
+        <h3>${escapeHtml(session.display_name || session.session_id)}</h3>
+        <div class="agenthub-chat-meta">
+          <span>${escapeHtml(session.session_id)}</span>
+          <span>${escapeHtml(session.agent_id || "未绑定")}</span>
+          <span>${escapeHtml(statusText(session.status))}</span>
+          <span>${escapeHtml(session.control_level || "未声明控制级别")}</span>
+        </div>
       </div>
-    </div>
-    <form class="agenthub-reply-form" data-agenthub-reply-session="${escapeHtml(session.session_id)}">
-      <label for="agenthubReplyMessage">人工回填 Codex 回复</label>
-      <textarea id="agenthubReplyMessage" rows="5" placeholder="把对应 Codex App 会话的回复粘贴到这里。"></textarea>
-      <div class="terminal-form-actions">
-        <span>回填后写入 SESSION_MESSAGES.ndjson，delivery=manual-reply</span>
-        <button type="submit">回填回复</button>
+      <div class="agenthub-chat-side-meta">
+        <span>${escapeHtml(session.thread_ref || "pending-bind")}</span>
+        <span>${escapeHtml(latestHandoff ? statusText(latestHandoff.status || latestHandoff.delivery) : "无待复制交接")}</span>
       </div>
-    </form>
+    </header>
     <div class="agenthub-message-list">
-      ${
-        messages.length
-          ? messages
-              .map(
-                (message) => `
-                  <div class="codex-message ${message.role === "codex" ? "assistant" : message.role === "supervisor" ? "user" : "event"}">
-                    <div class="codex-message-top">
-                      <span>${escapeHtml(message.role || "message")} · ${escapeHtml(statusText(message.status))} · ${escapeHtml(statusText(message.delivery))}</span>
-                      <span>${escapeHtml(message.created_at || "")}</span>
-                    </div>
-                    <div class="codex-message-text">${escapeHtml(message.content || "")}</div>
-                    ${
-                      message.handoff_path
-                        ? `<div class="codex-message-text"><code>${escapeHtml(message.handoff_path)}</code></div>`
-                        : ""
-                    }
-                  </div>
-                `
-              )
-              .join("")
-          : `<div class="item"><div class="item-meta">暂无会话消息</div></div>`
-      }
+      ${renderAgentHubMessages(session, messages)}
     </div>
+    ${renderAgentHubComposer(session)}
   `;
 }
 
@@ -3257,50 +3401,101 @@ function bindProjectShell() {
             await api(`/api/agenthub/messages/${encodeURIComponent(messageId)}/manual-copied`, { method: "POST", body: JSON.stringify({}) });
             await loadAgentHub();
           }
-          showToast("Handoff 已复制并标记 manual-copied");
+          showToast("交接内容已复制并标记 manual-copied");
         })
         .catch((err) => showToast(err.message));
       return;
     }
-    const sessionCard = event.target.closest(".agent-session-card[data-agenthub-session]");
-    if (sessionCard) {
-      selectAgentHubSession(sessionCard.dataset.agenthubSession || "", true);
-    }
-  });
-  document.addEventListener("submit", (event) => {
-    const form = event.target.closest(".agenthub-reply-form[data-agenthub-reply-session]");
-    if (!form) return;
-    event.preventDefault();
-    const sessionId = form.dataset.agenthubReplySession || "";
-    const textarea = form.querySelector("textarea");
-    const content = textarea?.value?.trim() || "";
-    if (!content) {
-      showToast("回填内容不能为空");
+    const removeFileButton = event.target.closest("button[data-agenthub-remove-file]");
+    if (removeFileButton) {
+      const sessionId = removeFileButton.dataset.agenthubFileSession || "";
+      const index = Number(removeFileButton.dataset.agenthubRemoveFile);
+      const files = agentHubDraftFiles(sessionId).slice();
+      if (Number.isInteger(index)) {
+        files.splice(index, 1);
+        state.agenthubDraftAttachments[sessionId] = files;
+        renderAgentHubSessions(state.agenthub || {});
+      }
       return;
     }
-    const messages = agentHubSessionMessages(sessionId).slice().reverse();
-    const inReplyTo = messages.find((item) => ["handoff-ready", "manual-copied"].includes(item.status) || item.delivery === "manual-handoff")?.message_id || "";
-    api(`/api/agenthub/sessions/${encodeURIComponent(sessionId)}/manual-reply`, {
-      method: "POST",
-      body: JSON.stringify({
-        content,
-        in_reply_to: inReplyTo,
-        task_id: messages.find((item) => item.message_id === inReplyTo)?.task_id || "",
-      }),
-    })
-      .then(async () => {
-        if (textarea) textarea.value = "";
-        await loadAgentHub();
-        showToast("Codex 回复已回填");
+    const attachButton = event.target.closest("button[data-agenthub-attach]");
+    if (attachButton) {
+      attachButton.closest(".agenthub-chat-composer")?.querySelector("input[data-agenthub-file-input]")?.click();
+      return;
+    }
+    const sessionCard = event.target.closest(".agenthub-thread-item[data-agenthub-session]");
+    if (sessionCard) {
+      selectAgentHubSession(sessionCard.dataset.agenthubSession || "", false);
+    }
+  });
+  document.addEventListener("change", (event) => {
+    const fileInput = event.target.closest("input[data-agenthub-file-input]");
+    if (!fileInput) return;
+    const sessionId = fileInput.dataset.agenthubFileInput || "";
+    const nextFiles = [
+      ...agentHubDraftFiles(sessionId),
+      ...Array.from(fileInput.files || []).map((file) => ({
+        name: file.name,
+        size: file.size,
+        type: file.type,
+        lastModified: file.lastModified,
+      })),
+    ];
+    state.agenthubDraftAttachments[sessionId] = nextFiles;
+    fileInput.value = "";
+    renderAgentHubSessions(state.agenthub || {});
+  });
+  document.addEventListener("input", (event) => {
+    const textarea = event.target.closest("textarea[data-agenthub-draft-input]");
+    if (!textarea) return;
+    state.agenthubDraftText[textarea.dataset.agenthubDraftInput || ""] = textarea.value;
+  });
+  document.addEventListener("submit", (event) => {
+    const chatForm = event.target.closest(".agenthub-chat-composer[data-agenthub-message-session]");
+    if (chatForm) {
+      event.preventDefault();
+      const sessionId = chatForm.dataset.agenthubMessageSession || "";
+      const session = agentHubDisplaySessions(state.agenthub || {}).find((item) => item.session_id === sessionId);
+      if (!session || session.virtual) {
+        showToast("这个入口还没有绑定可发送的 AgentHub session");
+        return;
+      }
+      const textarea = chatForm.querySelector("textarea[data-agenthub-draft-input]");
+      const content = (state.agenthubDraftText[sessionId] || textarea?.value || "").trim();
+      const draftFiles = agentHubDraftFiles(sessionId);
+      if (!content) {
+        showToast(draftFiles.length ? "当前队列接口只发送文字，请先输入消息" : "消息不能为空");
+        return;
+      }
+      state.agenthubSending = true;
+      renderAgentHubSessions(state.agenthub || {});
+      api(`/api/agenthub/sessions/${encodeURIComponent(sessionId)}/messages`, {
+        method: "POST",
+        body: JSON.stringify({
+          message: content,
+          source: "web-chat-workbench",
+        }),
       })
-      .catch((err) => showToast(err.message));
+        .then(async () => {
+          state.agenthubDraftText[sessionId] = "";
+          if (!draftFiles.length) state.agenthubDraftAttachments[sessionId] = [];
+          await loadAgentHub();
+          showToast(draftFiles.length ? "文字已进入队列，附件仍保留在草稿" : "消息已进入 AgentHub 队列");
+        })
+        .catch((err) => showToast(err.message))
+        .finally(() => {
+          state.agenthubSending = false;
+          renderAgentHubSessions(state.agenthub || {});
+        });
+      return;
+    }
   });
   document.addEventListener("keydown", (event) => {
     if (!["Enter", " "].includes(event.key)) return;
-    const sessionCard = event.target.closest(".agent-session-card[data-agenthub-session]");
+    const sessionCard = event.target.closest(".agenthub-thread-item[data-agenthub-session]");
     if (sessionCard) {
       event.preventDefault();
-      selectAgentHubSession(sessionCard.dataset.agenthubSession || "", true);
+      selectAgentHubSession(sessionCard.dataset.agenthubSession || "", false);
       return;
     }
   });

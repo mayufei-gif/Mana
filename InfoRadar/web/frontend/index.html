@@ -197,67 +197,27 @@
 
         </div>
 
-        <section class="project-workspace project-detail hidden" id="project-agenthub">
-          <div class="section-heading workspace-heading">
-            <div>
-              <p class="eyebrow">Agent Company</p>
-              <h2>Mana AI 公司总控</h2>
-            </div>
-            <span class="status-pill" id="agentHubRoot">AgentHub</span>
-          </div>
-
-          <section class="agenthub-hero">
-            <div>
-              <p class="eyebrow">Supervisor Console</p>
-              <h3>多 Codex 对话共享调度台</h3>
-              <p>这里负责统一登记项目、分配角色、追踪任务和沉淀交接协议。每个 Codex 对话只在自己的项目目录工作，需要共享的内容写入 NASAgentHub 的 coordination 与 shared 目录。</p>
-            </div>
-            <div class="workspace-actions">
-              <button class="ghost" data-route="hub" type="button">返回项目面板</button>
-              <button data-scroll="#agentSessionWall" type="button">查看 Codex 会话</button>
-            </div>
-          </section>
-
-          <div class="agenthub-kpi-grid">
-            <div>
-              <strong id="agentProjectCount">0</strong>
-              <span>注册项目</span>
-            </div>
-            <div>
-              <strong id="agentTaskCount">0</strong>
-              <span>Codex 会话</span>
-            </div>
-            <div>
-              <strong id="agentRoleCount">0</strong>
-              <span>最近消息</span>
-            </div>
-          </div>
-
-          <div class="agenthub-dashboard">
-            <article class="panel">
-              <div class="panel-title">项目注册表</div>
-              <div id="agentHubProjectList" class="stack"></div>
-            </article>
-            <article class="panel">
-              <div class="panel-title">共享路径</div>
-              <div class="path-list">
-                <div><span>Windows</span><code>G:/E盘/工作项目文件/NAS/NASAgentHub</code></div>
-                <div><span>Ubuntu</span><code>/home/mana/NASAgentHub</code></div>
-                <div><span>启动提示词</span><code>shared/templates/STARTUP_PROMPTS.md</code></div>
+        <section class="project-workspace project-detail hidden agenthub-chat-page" id="project-agenthub">
+          <div class="agenthub-chat-workbench" aria-label="AgentHub chat workbench">
+            <aside class="agenthub-chat-sidebar" aria-label="AgentHub sessions">
+              <div class="agenthub-sidebar-top">
+                <button class="ghost agenthub-back-button" data-route="hub" type="button">返回</button>
+                <div>
+                  <p class="eyebrow">AgentHub</p>
+                  <h2>Mana AI 公司总控</h2>
+                </div>
+                <span class="status-pill" id="agentHubRoot">AgentHub</span>
               </div>
-            </article>
+              <div class="agenthub-sidebar-metrics" aria-label="AgentHub summary">
+                <div><strong id="agentProjectCount">0</strong><span>项目</span></div>
+                <div><strong id="agentTaskCount">0</strong><span>会话</span></div>
+                <div><strong id="agentRoleCount">0</strong><span>消息</span></div>
+              </div>
+              <div id="agentSessionWall" class="agenthub-session-tree"></div>
+            </aside>
+            <section class="agenthub-chat-pane" id="agentSessionDetail" aria-live="polite"></section>
           </div>
-
-          <div class="ops-grid agenthub-work-grid">
-            <article class="panel">
-              <div class="panel-title">Codex 会话墙</div>
-              <div id="agentSessionWall" class="stack"></div>
-            </article>
-            <article class="panel">
-              <div class="panel-title">会话详情 / Handoff</div>
-              <div id="agentSessionDetail" class="stack"></div>
-            </article>
-          </div>
+          <div id="agentHubProjectList" class="agenthub-project-cache" aria-hidden="true"></div>
         </section>
 
         <section class="project-workspace project-detail hidden" id="project-codex">

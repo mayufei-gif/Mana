@@ -1301,71 +1301,353 @@ main {
   gap: 12px;
 }
 
-.agenthub-work-grid {
-  align-items: start;
+.agenthub-chat-page {
+  padding: 0;
 }
 
-.agent-session-card {
+.agenthub-project-cache {
+  display: none;
+}
+
+.agenthub-chat-workbench {
+  display: grid;
+  grid-template-columns: minmax(260px, 320px) minmax(0, 1fr);
+  min-height: calc(100vh - 144px);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #f7f8f5;
+  box-shadow: var(--shadow-soft);
+  overflow: hidden;
+}
+
+.agenthub-chat-sidebar {
+  min-width: 0;
+  display: grid;
+  grid-template-rows: auto auto minmax(0, 1fr);
+  gap: 12px;
+  padding: 14px;
+  border-right: 1px solid var(--line);
+  background: #fbfbf8;
+}
+
+.agenthub-sidebar-top {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 10px;
+}
+
+.agenthub-sidebar-top h2 {
+  margin: 2px 0 0;
+  font-size: 18px;
+  line-height: 1.2;
+  letter-spacing: 0;
+}
+
+.agenthub-back-button {
+  min-height: 34px;
+  padding: 0 10px;
+}
+
+.agenthub-sidebar-metrics {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 6px;
+}
+
+.agenthub-sidebar-metrics div {
+  min-width: 0;
+  padding: 8px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fff;
+}
+
+.agenthub-sidebar-metrics strong,
+.agenthub-sidebar-metrics span {
+  display: block;
+}
+
+.agenthub-sidebar-metrics strong {
+  color: #1d5f50;
+  font-size: 18px;
+  line-height: 1;
+}
+
+.agenthub-sidebar-metrics span {
+  margin-top: 4px;
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 800;
+}
+
+.agenthub-session-tree {
+  min-height: 0;
+  display: grid;
+  align-content: start;
+  gap: 12px;
+  overflow: auto;
+  padding-right: 2px;
+}
+
+.agenthub-thread-group {
+  display: grid;
+  gap: 6px;
+}
+
+.agenthub-thread-group-title {
+  padding: 0 4px;
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 900;
+  text-transform: uppercase;
+}
+
+.agenthub-thread-item {
+  width: 100%;
+  min-width: 0;
+  display: grid;
+  gap: 4px;
+  padding: 10px;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--text);
+  text-align: left;
   cursor: pointer;
-  transition:
-    border-color 0.18s ease,
-    background 0.18s ease,
-    transform 0.18s ease;
 }
 
-.agent-session-card:hover,
-.agent-session-card.selected {
-  border-color: rgba(22, 101, 52, 0.32);
-  background: #f3fbf5;
+.agenthub-thread-item:hover,
+.agenthub-thread-item.selected {
+  border-color: rgba(29, 95, 80, 0.24);
+  background: #eef6f1;
 }
 
-.agent-session-card.selected {
-  box-shadow: inset 3px 0 0 var(--mint);
+.agenthub-thread-item.selected {
+  box-shadow: inset 3px 0 0 #1d5f50;
 }
 
-.agent-session-card code,
-.handoff-panel code {
+.agenthub-thread-item.virtual {
+  background: #fff8e8;
+}
+
+.agenthub-thread-handle,
+.agenthub-thread-item small,
+.agenthub-thread-item span:last-child {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.agenthub-thread-handle {
+  color: #1d5f50;
+  font-size: 12px;
+  font-weight: 900;
+}
+
+.agenthub-thread-item strong {
+  overflow-wrap: anywhere;
+  font-size: 13px;
+  line-height: 1.25;
+}
+
+.agenthub-thread-item small,
+.agenthub-thread-item span:last-child {
+  color: var(--muted);
+  font-size: 11px;
+  line-height: 1.35;
+}
+
+.agenthub-chat-pane {
+  min-width: 0;
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr) auto;
+  background: #ffffff;
+}
+
+.agenthub-chat-header {
+  min-width: 0;
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 16px 18px;
+  border-bottom: 1px solid var(--line);
+  background: #fff;
+}
+
+.agenthub-chat-header h3 {
+  margin: 2px 0 8px;
+  font-size: 20px;
+  line-height: 1.25;
+  letter-spacing: 0;
+  overflow-wrap: anywhere;
+}
+
+.agenthub-chat-meta,
+.agenthub-chat-side-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.agenthub-chat-meta span,
+.agenthub-chat-side-meta span {
+  max-width: 260px;
+  padding: 3px 7px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 800;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.agenthub-chat-side-meta {
+  justify-content: flex-end;
+  align-content: flex-start;
+}
+
+.agenthub-message-list {
+  min-height: 0;
+  display: grid;
+  align-content: start;
+  gap: 10px;
+  overflow: auto;
+  padding: 18px;
+  background: #f7f8f5;
+}
+
+.agenthub-chat-pane .codex-message {
+  width: min(76%, 760px);
+  border-radius: 8px;
+  background: #fff;
+}
+
+.agenthub-chat-pane .codex-message.user {
+  justify-self: end;
+  border-left: 1px solid var(--line);
+  border-right: 3px solid #275f87;
+  background: #eef5f8;
+}
+
+.agenthub-chat-pane .codex-message.assistant {
+  justify-self: start;
+  border-left: 3px solid #1d5f50;
+}
+
+.agenthub-chat-pane .codex-message.event {
+  justify-self: center;
+  width: min(92%, 680px);
+  border-left: 3px solid #a46d18;
+  background: #fff8e8;
+}
+
+.agenthub-chat-pane .codex-message-text {
+  font-size: 13px;
+  white-space: pre-wrap;
+}
+
+.agenthub-chat-pane .codex-message-text code {
   display: block;
   margin-top: 7px;
-  color: #20352d;
   font-size: 12px;
-  line-height: 1.45;
   white-space: normal;
   word-break: break-all;
 }
 
-.agent-session-detail-card .item-meta {
-  word-break: break-word;
+.agenthub-message-actions {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: 8px;
 }
 
-.handoff-panel.muted-panel {
-  opacity: 0.76;
-}
-
-.agenthub-reply-form {
+.agenthub-chat-composer {
   display: grid;
-  gap: 9px;
+  gap: 8px;
   padding: 12px;
-  border: 1px solid var(--line);
-  border-radius: 12px;
+  border-top: 1px solid var(--line);
   background: #fff;
 }
 
-.agenthub-reply-form label {
-  color: var(--text);
-  font-size: 13px;
-  font-weight: 900;
+.agenthub-draft-files {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
 }
 
-.agenthub-reply-form textarea {
-  width: 100%;
-  min-height: 118px;
-  resize: vertical;
+.agenthub-draft-files.empty {
+  display: none;
 }
 
-.agenthub-message-list {
+.agenthub-file-chip {
+  max-width: 100%;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 7px;
+  border: 1px solid rgba(39, 95, 135, 0.22);
+  border-radius: 999px;
+  background: #eef5f8;
+  color: #23312b;
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.agenthub-file-chip span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.agenthub-file-chip button {
+  min-width: 0;
+  min-height: 0;
+  padding: 0 4px;
+  border: 0;
+  background: transparent;
+  color: #6b3d19;
+}
+
+.agenthub-composer-row {
   display: grid;
+  grid-template-columns: 38px minmax(0, 1fr) auto;
   gap: 8px;
+  align-items: end;
+}
+
+.agenthub-icon-button {
+  width: 38px;
+  min-width: 38px;
+  height: 38px;
+  padding: 0;
+  border-radius: 999px;
+  font-size: 22px;
+  line-height: 1;
+}
+
+.agenthub-file-input {
+  display: none;
+}
+
+.agenthub-chat-composer textarea {
+  width: 100%;
+  min-height: 42px;
+  max-height: 160px;
+  resize: vertical;
+  line-height: 1.45;
+}
+
+.agenthub-composer-note,
+.agenthub-empty-state {
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.agenthub-empty-state {
+  padding: 14px;
 }
 
 .path-list {
@@ -2835,8 +3117,23 @@ main {
   }
 
   .ops-grid,
-  .agenthub-dashboard {
+  .agenthub-dashboard,
+  .agenthub-chat-workbench {
     grid-template-columns: 1fr;
+  }
+
+  .agenthub-chat-workbench {
+    min-height: auto;
+  }
+
+  .agenthub-chat-sidebar {
+    max-height: 44vh;
+    border-right: 0;
+    border-bottom: 1px solid var(--line);
+  }
+
+  .agenthub-chat-pane {
+    min-height: 62vh;
   }
 
   .hero-band {
@@ -2926,6 +3223,7 @@ main {
   .ops-grid,
   .agenthub-dashboard,
   .agenthub-kpi-grid,
+  .agenthub-chat-workbench,
   .codex-command-center,
   .codex-status-grid,
   .codex-service-grid,
@@ -2941,6 +3239,28 @@ main {
   .openclaw-command-item,
   .openclaw-command-actions {
     grid-template-columns: 1fr;
+  }
+
+  .agenthub-sidebar-top,
+  .agenthub-chat-header,
+  .agenthub-composer-row {
+    grid-template-columns: 1fr;
+  }
+
+  .agenthub-chat-header {
+    display: grid;
+  }
+
+  .agenthub-chat-side-meta {
+    justify-content: flex-start;
+  }
+
+  .agenthub-chat-pane .codex-message {
+    width: 100%;
+  }
+
+  .agenthub-icon-button {
+    width: 100%;
   }
 
   .codex-terminal-shell {
