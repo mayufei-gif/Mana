@@ -732,6 +732,36 @@ def wechat_rss_url(fakeid: str) -> str:
     return f"/api/manual-hive/wechat/rss?fakeid={urllib.parse.quote(fid, safe='')}"
 
 
+def request_public_base_url(request: Request) -> str:
+    configured = os.environ.get("PUBLIC_BASE_URL", "").strip().rstrip("/")
+    if configured:
+        return configured
+    host = request.headers.get("x-forwarded-host") or request.headers.get("host") or request.url.netloc
+    scheme = request.headers.get("x-forwarded-proto") or request.url.scheme or "https"
+    return f"{scheme}://{host}".rstrip("/")
+
+
+def absolute_url(request: Request, path: str) -> str:
+    text = str(path or "").strip()
+    if not text:
+        return ""
+    if text.startswith("http://") or text.startswith("https://"):
+        return text
+    if not text.startswith("/"):
+        text = f"/{text}"
+    return f"{request_public_base_url(request)}{text}"
+
+
+def wechat_folo_feed_url(request: Request, fakeid: str) -> str:
+    fid = str(fakeid or "").strip()
+    return absolute_url(request, f"/api/folo/wechat-feed?fakeid={urllib.parse.quote(fid, safe='')}")
+
+
+def folo_open_url(feed_url: str, nickname: str = "") -> str:
+    query = feed_url or nickname or "RSS"
+    return f"https://app.folo.is/discover?keyword={urllib.parse.quote(query, safe='')}"
+
+
 def wechat_rss_view_url(fakeid: str) -> str:
     fid = str(fakeid or "").strip()
     return f"/api/manual-hive/wechat/rss-view?fakeid={urllib.parse.quote(fid, safe='')}"
@@ -739,6 +769,21 @@ def wechat_rss_view_url(fakeid: str) -> str:
 
 def wechat_internal_rss_path(fakeid: str) -> str:
     return f"/api/rss/{urllib.parse.quote(str(fakeid or '').strip(), safe='')}"
+
+
+def rewrite_wechat_rss_self_url(rss_text: str, fakeid: str, replacement_url: str) -> str:
+    fid = str(fakeid or "").strip()
+    if not fid or not replacement_url:
+        return rss_text
+    quoted = urllib.parse.quote(fid, safe="")
+    result = rss_text
+    for old in (
+        f"{WECHAT_API_BASE}/api/rss/{fid}",
+        f"{WECHAT_API_BASE}/api/rss/{quoted}",
+        wechat_rss_url(fid),
+    ):
+        result = result.replace(old, replacement_url)
+    return result
 
 
 def rss_datetime_text(value: str) -> str:
@@ -1006,6 +1051,7 @@ def manual_hive_wechat_actions(fakeid: str, nickname: str) -> list[dict]:
         {"key": "subscribe_wechat", "label": "订阅公众号", "method": "POST", "endpoint": "/api/manual-hive/wechat/subscribe"},
         {"key": "poll_articles", "label": "拉取文章", "method": "POST", "endpoint": "/api/manual-hive/wechat/subscribe"},
         {"key": "open_rss", "label": "查看文章", "url": wechat_rss_view_url(fakeid) if fakeid else rss_url},
+        {"key": "open_folo", "label": "在 Folo 订阅并打开", "method": "POST", "endpoint": "/api/manual-hive/wechat/folo-open"},
         {"key": "search_inforadar", "label": "检索文章", "url": f"/#inforadar?search={urllib.parse.quote(search_query)}"},
     ]
 
@@ -1094,6 +1140,27 @@ def subscribe_wechat_account(fakeid: str, nickname: str = "", poll: bool = True)
         "import_result": import_result,
         "item": normalize_wechat_search_item({"fakeid": fid, "nickname": name, "alias": ""}, {fid}),
         "manual_entry": manual_item,
+    }
+
+
+def open_wechat_in_folo(request: Request, fakeid: str, nickname: str = "", poll: bool = True) -> dict:
+    fid = clean_resource_text(fakeid, 200)
+    name = clean_resource_text(nickname or "微信公众号", 240)
+    if not fid:
+        raise ValueError("缺少 fakeid")
+    subscription = subscribe_wechat_account(fid, name, poll=poll)
+    feed_url = wechat_folo_feed_url(request, fid)
+    open_url = folo_open_url(feed_url, name)
+    return {
+        **subscription,
+        "ok": bool(subscription.get("ok", True)),
+        "feed_url": feed_url,
+        "folo_open_url": open_url,
+        "folo_url": open_url,
+        "rss_view_url": absolute_url(request, wechat_rss_view_url(fid)),
+        "raw_rss_url": absolute_url(request, wechat_rss_url(fid)),
+        "clipboard_text": feed_url,
+        "message": "已订阅公众号并生成 Folo 可抓取 RSS；如果 Folo 未自动识别，请在 Folo 搜索框粘贴该 RSS 地址。",
     }
 
 
@@ -2864,16 +2931,46 @@ async def post_manual_hive_wechat_subscribe(request: Request) -> dict:
         raise HTTPException(status_code=502, detail=f"公众号订阅失败：{exc}") from exc
 
 
+@app.post("/api/manual-hive/wechat/folo-open", dependencies=[Depends(require_access)])
+async def post_manual_hive_wechat_folo_open(request: Request) -> dict:
+    try:
+        payload = await request.json()
+        return open_wechat_in_folo(
+            request,
+            str(payload.get("fakeid") or ""),
+            str(payload.get("nickname") or payload.get("name") or ""),
+            bool(payload.get("poll", True)),
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except Exception as exc:
+        raise HTTPException(status_code=502, detail=f"公众号 Folo 订阅打开失败：{exc}") from exc
+
+
 @app.get("/api/manual-hive/wechat/rss", dependencies=[Depends(require_access)])
 def get_manual_hive_wechat_rss(fakeid: str = Query(default="", min_length=1)) -> Response:
     try:
         fid = clean_resource_text(fakeid, 200)
         rss_text = wechat_api_text(wechat_internal_rss_path(fid), timeout=45)
-        rss_text = rss_text.replace(f"{WECHAT_API_BASE}/api/rss/{fid}", wechat_rss_url(fid))
-        rss_text = rss_text.replace(f"{WECHAT_API_BASE}/api/rss/{urllib.parse.quote(fid, safe='')}", wechat_rss_url(fid))
+        rss_text = rewrite_wechat_rss_self_url(rss_text, fid, wechat_rss_url(fid))
         return Response(content=rss_text, media_type="application/rss+xml; charset=utf-8")
     except Exception as exc:
         raise HTTPException(status_code=502, detail=f"公众号 RSS 打开失败：{exc}") from exc
+
+
+@app.get("/api/folo/wechat-feed")
+def get_folo_wechat_feed(request: Request, fakeid: str = Query(default="", min_length=1)) -> Response:
+    try:
+        fid = clean_resource_text(fakeid, 200)
+        if fid not in wechat_subscription_fakeids():
+            raise HTTPException(status_code=404, detail="该公众号尚未在 InfoRadar 订阅")
+        rss_text = wechat_api_text(wechat_internal_rss_path(fid), timeout=45)
+        rss_text = rewrite_wechat_rss_self_url(rss_text, fid, wechat_folo_feed_url(request, fid))
+        return Response(content=rss_text, media_type="application/rss+xml; charset=utf-8")
+    except HTTPException:
+        raise
+    except Exception as exc:
+        raise HTTPException(status_code=502, detail=f"Folo 公众号 Feed 打开失败：{exc}") from exc
 
 
 @app.get("/api/manual-hive/wechat/rss-view", dependencies=[Depends(require_access)])

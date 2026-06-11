@@ -32,7 +32,7 @@ def assert_wechat_result_shape(item: dict) -> None:
     if missing:
         raise AssertionError(f"missing result fields: {missing}; item={item}")
     action_keys = {action.get("key") for action in item.get("actions") or []}
-    expected_actions = {"subscribe_wechat", "poll_articles", "open_rss", "search_inforadar"}
+    expected_actions = {"subscribe_wechat", "poll_articles", "open_rss", "open_folo", "search_inforadar"}
     missing_actions = expected_actions - action_keys
     if missing_actions:
         raise AssertionError(f"missing actions: {sorted(missing_actions)}; item={item}")
@@ -40,8 +40,10 @@ def assert_wechat_result_shape(item: dict) -> None:
 
 def main() -> int:
     calls: list[tuple[str, str, dict | None]] = []
+    subscribed_fakeids: set[str] = set()
     fake_rss = """<?xml version="1.0" encoding="UTF-8"?>
 <rss version="2.0"><channel><title>人民日报</title>
+<link>http://127.0.0.1:5000/api/rss/MjM5MjAxNDM4MA==</link>
 <item><title>测试文章</title><link>https://mp.weixin.qq.com/s/test</link><pubDate>Wed, 10 Jun 2026 00:00:00 +0000</pubDate><description>测试摘要</description></item>
 </channel></rss>"""
 
@@ -63,10 +65,11 @@ def main() -> int:
                 },
             }
         if path == "/api/rss/subscriptions":
-            return {"success": True, "data": []}
+            return {"success": True, "data": [{"fakeid": item} for item in sorted(subscribed_fakeids)]}
         if path == "/api/rss/subscribe":
             if not payload or payload.get("fakeid") != "MjM5MjAxNDM4MA==":
                 raise AssertionError(f"bad subscribe payload: {payload}")
+            subscribed_fakeids.add(payload["fakeid"])
             return {"success": True, "data": {"fakeid": payload["fakeid"]}}
         if path == "/api/rss/poll":
             return {"success": True, "data": {"articles": 3}}
@@ -123,6 +126,29 @@ def main() -> int:
             if subscribe.status_code != 200:
                 raise AssertionError(f"wechat subscribe endpoint failed: {subscribe.status_code} {subscribe.text[:500]}")
             subscribed = subscribe.json()
+            folo_open = client.post(
+                "/api/manual-hive/wechat/folo-open",
+                json={"fakeid": items[0]["fakeid"], "nickname": items[0]["nickname"], "poll": True},
+                headers={"host": "inforadar.mana-mana.top", "x-forwarded-proto": "https"},
+            )
+            if folo_open.status_code != 200:
+                raise AssertionError(f"wechat folo-open endpoint failed: {folo_open.status_code} {folo_open.text[:500]}")
+            folo_data = folo_open.json()
+            if "/api/folo/wechat-feed" not in folo_data.get("feed_url", ""):
+                raise AssertionError(f"folo-open must return public feed_url: {folo_data}")
+            if "app.folo.is" not in folo_data.get("folo_open_url", ""):
+                raise AssertionError(f"folo-open must return Folo open URL: {folo_data}")
+            if folo_data.get("clipboard_text") != folo_data.get("feed_url"):
+                raise AssertionError(f"folo-open clipboard_text must equal feed_url: {folo_data}")
+            feed_response = client.get(
+                "/api/folo/wechat-feed",
+                params={"fakeid": items[0]["fakeid"]},
+                headers={"host": "inforadar.mana-mana.top", "x-forwarded-proto": "https"},
+            )
+            if feed_response.status_code != 200 or "测试文章" not in feed_response.text:
+                raise AssertionError(f"public Folo feed failed: {feed_response.status_code} {feed_response.text[:300]}")
+            if "https://inforadar.mana-mana.top/api/folo/wechat-feed" not in feed_response.text:
+                raise AssertionError(f"public Folo feed must rewrite self URL to public feed: {feed_response.text[:500]}")
         else:
             subscribed = backend_app.subscribe_wechat_account(items[0]["fakeid"], items[0]["nickname"], poll=True)
         if not subscribed.get("ok") or not subscribed.get("rss_url") or not subscribed.get("manual_entry"):

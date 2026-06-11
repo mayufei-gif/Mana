@@ -1250,7 +1250,9 @@ function renderManualHiveEntries() {
                 ${item.subscribed ? "重新拉取文章" : "订阅公众号"}
               </button>
               ${(item.rss_view_url || item.rss_url) ? `<a href="${escapeHtml(item.rss_view_url || item.rss_url)}" target="_blank" rel="noreferrer">查看文章</a>` : ""}
-              ${item.rss_url ? `<a class="muted-link" href="${escapeHtml(item.rss_url)}" target="_blank" rel="noreferrer">RSS源</a>` : ""}
+              <button class="ghost" type="button" data-wechat-folo-open="1" data-fakeid="${escapeHtml(item.fakeid || "")}" data-nickname="${escapeHtml(item.nickname || item.name || "")}">
+                在 Folo 订阅并打开
+              </button>
               <button class="ghost" type="button" data-wechat-search-radar="${escapeHtml(item.nickname || item.name || "")}">检索文章</button>
             </div>
           </article>
@@ -1362,6 +1364,72 @@ async function subscribeManualHiveWechat(fakeid, nickname, button = null) {
     return data;
   } finally {
     if (button) button.disabled = false;
+    renderManualHiveEntries();
+  }
+}
+
+async function openManualHiveWechatInFolo(fakeid, nickname, button = null) {
+  const fid = String(fakeid || "").trim();
+  const name = String(nickname || "").trim();
+  if (!fid) {
+    showToast("缺少公众号 fakeid，无法送往 Folo");
+    return null;
+  }
+  let popup = null;
+  try {
+    popup = window.open("about:blank", "_blank", "noopener,noreferrer");
+  } catch {
+    popup = null;
+  }
+  const originalText = button?.textContent || "";
+  if (button) {
+    button.disabled = true;
+    button.textContent = "正在送往 Folo...";
+  }
+  try {
+    const data = await api("/api/manual-hive/wechat/folo-open", {
+      method: "POST",
+      body: JSON.stringify({ fakeid: fid, nickname: name, poll: true }),
+    });
+    if (state.manualHiveWechatResults?.items) {
+      state.manualHiveWechatResults.items = state.manualHiveWechatResults.items.map((item) => (
+        item.fakeid === fid
+          ? {
+              ...item,
+              subscribed: true,
+              status: "已订阅 · Folo待确认",
+              rss_url: data.raw_rss_url || item.rss_url,
+              rss_view_url: data.rss_view_url || item.rss_view_url,
+              folo_feed_url: data.feed_url,
+              folo_open_url: data.folo_open_url,
+            }
+          : item
+      ));
+    }
+    if (data.feed_url) {
+      await copyText(data.feed_url).catch(() => null);
+    }
+    if (data.folo_open_url) {
+      if (popup) {
+        popup.location.href = data.folo_open_url;
+      } else {
+        window.open(data.folo_open_url, "_blank", "noopener,noreferrer");
+      }
+    } else if (popup) {
+      popup.close();
+    }
+    await loadManualHiveEntries().catch(() => null);
+    const articleCount = data.import_result?.article_count ?? 0;
+    showToast(`已订阅并打开 Folo：${name || "公众号"} · ${articleCount} 篇；RSS 地址已复制`);
+    return data;
+  } catch (err) {
+    if (popup) popup.close();
+    throw err;
+  } finally {
+    if (button) {
+      button.disabled = false;
+      button.textContent = originalText || "在 Folo 订阅并打开";
+    }
     renderManualHiveEntries();
   }
 }
@@ -3068,6 +3136,11 @@ function bindFoloHiveTools() {
   });
 
   $("#manualHiveList")?.addEventListener("click", (event) => {
+    const foloOpenBtn = event.target.closest("[data-wechat-folo-open]");
+    if (foloOpenBtn) {
+      openManualHiveWechatInFolo(foloOpenBtn.dataset.fakeid, foloOpenBtn.dataset.nickname, foloOpenBtn).catch((err) => showToast(err.message));
+      return;
+    }
     const subscribeBtn = event.target.closest("[data-wechat-subscribe]");
     if (subscribeBtn) {
       subscribeManualHiveWechat(subscribeBtn.dataset.fakeid, subscribeBtn.dataset.nickname, subscribeBtn).catch((err) => showToast(err.message));
