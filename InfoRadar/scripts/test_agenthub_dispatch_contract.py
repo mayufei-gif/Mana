@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import os
 import sys
 import tempfile
 import unittest
@@ -28,10 +29,16 @@ def read_ndjson(root: Path, relative: str) -> list[dict]:
     return [json.loads(line) for line in path.read_text(encoding="utf-8").splitlines() if line.strip()]
 
 
+def mcp_tool_payload(response: dict) -> dict:
+    return json.loads(response["result"]["content"][0]["text"])
+
+
 class AgentHubDispatchContractTest(unittest.TestCase):
     def setUp(self) -> None:
         self.tmp = tempfile.TemporaryDirectory()
         self.root = Path(self.tmp.name)
+        self.old_agenthub_dir = os.environ.get("AGENTHUB_DIR")
+        os.environ["AGENTHUB_DIR"] = str(self.root)
         write_json(
             self.root,
             "coordination/AGENT_REGISTRY.json",
@@ -85,7 +92,27 @@ class AgentHubDispatchContractTest(unittest.TestCase):
         write_json(self.root, "coordination/TASK_BOARD.json", {"version": "1.0", "items": []})
 
     def tearDown(self) -> None:
+        if self.old_agenthub_dir is None:
+            os.environ.pop("AGENTHUB_DIR", None)
+        else:
+            os.environ["AGENTHUB_DIR"] = self.old_agenthub_dir
         self.tmp.cleanup()
+
+    def test_mcp_tool_registry_exposes_task_room_supervisor_and_attachment_tools(self) -> None:
+        response = backend.handle_mcp_rpc({"jsonrpc": "2.0", "id": 1, "method": "tools/list"})
+        tools = response["result"]["tools"]
+        names = {tool["name"] for tool in tools}
+
+        self.assertIn("list_task_rooms", names)
+        self.assertIn("create_task_room", names)
+        self.assertIn("send_task_room_message", names)
+        self.assertIn("supervisor_dispatch", names)
+        self.assertIn("upload_attachment", names)
+
+        send_tool = next(tool for tool in tools if tool["name"] == "send_task_room_message")
+        supervisor_tool = next(tool for tool in tools if tool["name"] == "supervisor_dispatch")
+        self.assertIn("attachments", send_tool["inputSchema"]["properties"])
+        self.assertIn("attachments", supervisor_tool["inputSchema"]["properties"])
 
     def test_supervisor_mention_creates_real_supervisor_and_routes_to_windows_api(self) -> None:
         result = backend.agenthub_dispatch_chat_message(
@@ -147,6 +174,63 @@ class AgentHubDispatchContractTest(unittest.TestCase):
         self.assertEqual(result["attachments"][0]["filename"], "note.txt")
         session_rows = read_ndjson(self.root, "logs/SESSION_MESSAGES.ndjson")
         self.assertEqual(session_rows[-1]["attachments"][0]["attachment_id"], attachment["attachment_id"])
+
+    def test_mcp_can_upload_attachment_and_supervisor_dispatch_to_ubuntu_session(self) -> None:
+        upload_response = backend.handle_mcp_rpc(
+            {
+                "jsonrpc": "2.0",
+                "id": 1,
+                "method": "tools/call",
+                "params": {
+                    "name": "upload_attachment",
+                    "arguments": {"filename": "test.txt", "mime": "text/plain", "content": "hello from mcp"},
+                },
+            }
+        )
+        attachment = mcp_tool_payload(upload_response)["attachment"]
+
+        room_response = backend.handle_mcp_rpc(
+            {
+                "jsonrpc": "2.0",
+                "id": 2,
+                "method": "tools/call",
+                "params": {"name": "create_task_room", "arguments": {"title": "测试主管调度 OpenClaw"}},
+            }
+        )
+        room = mcp_tool_payload(room_response)["room"]
+
+        dispatch_response = backend.handle_mcp_rpc(
+            {
+                "jsonrpc": "2.0",
+                "id": 3,
+                "method": "tools/call",
+                "params": {
+                    "name": "supervisor_dispatch",
+                    "arguments": {
+                        "room_id": room["room_id"],
+                        "message": "@主管 请把这个附件交给 @ubuntu-codex-cli，只做路由测试，不需要实际执行。",
+                        "attachments": [attachment],
+                    },
+                },
+            }
+        )
+        result = mcp_tool_payload(dispatch_response)
+
+        self.assertTrue((self.root / attachment["path"]).exists())
+        self.assertIn("session-ubuntu-agenthub-001", [item["session_id"] for item in result["routed_to"]])
+
+        room_rows = read_ndjson(self.root, "logs/TASK_ROOM_MESSAGES.ndjson")
+        self.assertEqual(room_rows[-1]["attachments"][0]["attachment_id"], attachment["attachment_id"])
+
+        session_rows = read_ndjson(self.root, "logs/SESSION_MESSAGES.ndjson")
+        self.assertTrue(
+            any(
+                row["session_id"] == "session-ubuntu-agenthub-001"
+                and row["attachments"]
+                and row["attachments"][0]["attachment_id"] == attachment["attachment_id"]
+                for row in session_rows
+            )
+        )
 
     def test_sidebar_tree_contains_agent_folder_session_and_task_rooms(self) -> None:
         backend.agenthub_create_task_room(self.root, "树状房间", participants=["supervisor-agent"])

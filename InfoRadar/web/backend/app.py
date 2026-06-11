@@ -3198,9 +3198,9 @@ def agenthub_current_state(root: Path) -> dict:
     if data.get("items") == [] and not (root / "memory" / "CURRENT_STATE.json").exists():
         return {
             "system_name": "Mana AI 公司总控系统",
-            "current_phase": "AgentHub MCP 第一阶段接入",
-            "active_focus": "让 GPT 应用通过 /mcp 列出 Agent/Session，并向指定 session 写入任务和消息日志",
-            "next_best_action": "在 GPT 应用中配置 MCP URL 后测试 list_sessions 与 send_message_to_session",
+            "current_phase": "AgentHub supervisor-agent / Task Room / @ 路由 / 附件协议验收阶段",
+            "active_focus": "让 GPT 应用通过 /mcp 发现 Task Room、supervisor_dispatch 和 upload_attachment 工具，并完成端到端调度验收",
+            "next_best_action": "测试 list_task_rooms、create_task_room、send_task_room_message、supervisor_dispatch、upload_attachment",
         }
     return data
 
@@ -3231,8 +3231,11 @@ def agenthub_hermes_bootstrap(root: Path) -> dict:
         "important_notes": [
             "Windows API Codex App Agent 是当前 Windows 主力 Agent。",
             "Windows API Codex App Agent 与 Windows GPT Codex App Agent 路径可能相同，但必须用不同 agent_id 和 session_id 区分。",
-            "第一阶段 send_message_to_session 写入任务和消息日志，delivery=bridge-pending，不假装已经控制 Codex App 私有窗口。",
-            "GPT 应用配置 MCP 后，优先验证 list_agents、list_sessions、send_message_to_session、read_session_messages。",
+            "supervisor-agent 与 session-supervisor-main-001 已落地，@主管 应进入真实主管调度路径。",
+            "Task Room 消息写入 logs/TASK_ROOM_MESSAGES.ndjson，并通过 routed_to / related_task_ids 汇总多 Agent 调度。",
+            "附件必须先上传到 uploads/ 并以 attachments 引用进入 Task Room 与目标 SESSION_MESSAGES。",
+            "阶段 1F Windows Codex App 私有窗口自动投递仍未完成，不假装已经控制 Codex App 真实聊天窗口。",
+            "GPT 应用配置 MCP 后，优先验证 list_task_rooms、create_task_room、send_task_room_message、supervisor_dispatch、upload_attachment。",
         ],
     }
     return summary
@@ -3242,8 +3245,28 @@ def agenthub_tool_text(payload: Any) -> dict:
     return {"content": [{"type": "text", "text": json.dumps(payload, ensure_ascii=False, indent=2)}]}
 
 
+def agenthub_mcp_attachments(args: dict) -> list[dict]:
+    attachments = args.get("attachments") if isinstance(args, dict) else []
+    if not isinstance(attachments, list):
+        return []
+    return [item for item in attachments if isinstance(item, dict)]
+
+
 def agenthub_mcp_tools() -> list[dict]:
     string_schema = {"type": "string"}
+    attachment_schema = {
+        "type": "object",
+        "properties": {
+            "attachment_id": string_schema,
+            "filename": string_schema,
+            "path": string_schema,
+            "size": {"type": "integer", "minimum": 0},
+            "mime": string_schema,
+        },
+        "required": ["attachment_id", "filename", "path"],
+        "additionalProperties": True,
+    }
+    attachment_list_schema = {"type": "array", "items": attachment_schema}
     return [
         {
             "name": "list_agents",
@@ -3265,7 +3288,12 @@ def agenthub_mcp_tools() -> list[dict]:
             "description": "向指定 session 写入主管消息并创建桥接待发送任务。",
             "inputSchema": {
                 "type": "object",
-                "properties": {"session_id": string_schema, "message": string_schema, "task_title": string_schema},
+                "properties": {
+                    "session_id": string_schema,
+                    "message": string_schema,
+                    "task_title": string_schema,
+                    "attachments": attachment_list_schema,
+                },
                 "required": ["session_id", "message"],
             },
         },
@@ -3274,7 +3302,12 @@ def agenthub_mcp_tools() -> list[dict]:
             "description": "强制把任务派发给指定 session，并写入 TASK_BOARD 与 SESSION_MESSAGES。",
             "inputSchema": {
                 "type": "object",
-                "properties": {"session_id": string_schema, "task_title": string_schema, "message": string_schema},
+                "properties": {
+                    "session_id": string_schema,
+                    "task_title": string_schema,
+                    "message": string_schema,
+                    "attachments": attachment_list_schema,
+                },
                 "required": ["session_id", "task_title", "message"],
             },
         },
@@ -3311,7 +3344,7 @@ def agenthub_mcp_tools() -> list[dict]:
             "description": "向 Task Room 写入消息并按 @ 提及分发到 supervisor、Agent 或具体 session。",
             "inputSchema": {
                 "type": "object",
-                "properties": {"room_id": string_schema, "message": string_schema},
+                "properties": {"room_id": string_schema, "message": string_schema, "attachments": attachment_list_schema},
                 "required": ["room_id", "message"],
             },
         },
@@ -3320,8 +3353,22 @@ def agenthub_mcp_tools() -> list[dict]:
             "description": "通过真实 supervisor-agent 解析 @ 提及并分发任务。",
             "inputSchema": {
                 "type": "object",
-                "properties": {"message": string_schema, "room_id": string_schema},
+                "properties": {"message": string_schema, "room_id": string_schema, "attachments": attachment_list_schema},
                 "required": ["message"],
+            },
+        },
+        {
+            "name": "upload_attachment",
+            "description": "上传一个文本或 base64 附件到 AgentHub uploads，并返回可放入消息 attachments 的引用。",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "filename": string_schema,
+                    "mime": string_schema,
+                    "content": string_schema,
+                    "content_base64": string_schema,
+                },
+                "required": ["filename"],
             },
         },
         {
@@ -3360,6 +3407,7 @@ def agenthub_call_tool(name: str, arguments: dict | None = None) -> dict:
                 str(args.get("message") or ""),
                 task_title=str(args.get("task_title") or "") or None,
                 source="mcp",
+                attachments=agenthub_mcp_attachments(args),
             )
         )
     if name == "dispatch_task_to_session":
@@ -3370,6 +3418,7 @@ def agenthub_call_tool(name: str, arguments: dict | None = None) -> dict:
                 str(args.get("message") or ""),
                 task_title=str(args.get("task_title") or "") or None,
                 source="mcp-dispatch",
+                attachments=agenthub_mcp_attachments(args),
             )
         )
     if name == "read_session_messages":
@@ -3406,6 +3455,7 @@ def agenthub_call_tool(name: str, arguments: dict | None = None) -> dict:
                 sender_id="mcp",
                 room_id=str(args.get("room_id") or ""),
                 source="mcp-task-room",
+                attachments=agenthub_mcp_attachments(args),
             )
         )
     if name == "supervisor_dispatch":
@@ -3417,7 +3467,27 @@ def agenthub_call_tool(name: str, arguments: dict | None = None) -> dict:
                 sender_id="mcp",
                 room_id=str(args.get("room_id") or "") or None,
                 source="mcp-supervisor-dispatch",
+                attachments=agenthub_mcp_attachments(args),
             )
+        )
+    if name == "upload_attachment":
+        if args.get("content_base64"):
+            try:
+                content = base64.b64decode(str(args.get("content_base64")), validate=True)
+            except Exception as exc:
+                raise HTTPException(status_code=400, detail="content_base64 无法解析") from exc
+        else:
+            content = str(args.get("content") or args.get("text") or "").encode("utf-8")
+        return agenthub_tool_text(
+            {
+                "ok": True,
+                "attachment": agenthub_store_attachment(
+                    root,
+                    filename=str(args.get("filename") or args.get("name") or "attachment"),
+                    content=content,
+                    mime=str(args.get("mime") or args.get("type") or "application/octet-stream"),
+                ),
+            }
         )
     if name == "get_path_map":
         return agenthub_tool_text({"ok": True, "path_map": read_agenthub_json(root, "coordination/PATH_MAP.json")})
