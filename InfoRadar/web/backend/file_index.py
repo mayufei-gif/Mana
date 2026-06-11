@@ -1655,6 +1655,41 @@ def search_history_records(query: str, limit: int, offset: int, mode: str = "sma
             "payload": payload,
         }
 
+    def scan_records_by_timestamp() -> dict:
+        scan_results: list[dict] = []
+        scan_matched_count = 0
+        scan_has_more = False
+        rows = conn.execute(
+            """
+            SELECT
+                kind, title, body, meta, url, folo_url,
+                folo_matched, folo_label, timestamp, tokens, payload_json
+            FROM records
+            ORDER BY timestamp DESC, rowid DESC
+            """
+        )
+        for row in rows:
+            record_tokens = set(str(row["tokens"] or "").split())
+            if not query_tokens.intersection(record_tokens):
+                continue
+            record = record_from_db_row(row)
+            if is_generated_summary_title(str(record.get("title") or "")) and not allow_generated_summary:
+                continue
+            search_text = " ".join([str(row["title"] or ""), str(row["body"] or ""), str(row["meta"] or "")])
+            record["score"] = index_match_score(query, {**record, "search_text": search_text}, mode)
+            if record["score"] <= 0:
+                continue
+            if scan_matched_count < offset:
+                scan_matched_count += 1
+                continue
+            if len(scan_results) >= limit:
+                scan_has_more = True
+                break
+            scan_results.append(record)
+            scan_matched_count += 1
+        scan_total = offset + len(scan_results) + (1 if scan_has_more else 0)
+        return {"total": scan_total, "results": scan_results, "has_more": scan_has_more, "total_is_estimated": scan_has_more}
+
     try:
         normalized = " ".join((query or "").strip().split())
         allow_generated_summary = "inforadar" in normalized.lower()
@@ -1695,6 +1730,9 @@ def search_history_records(query: str, limit: int, offset: int, mode: str = "sma
                     "has_more": len(phrase_results) > offset + limit or len(phrase_results) >= phrase_limit,
                     "total_is_estimated": len(phrase_results) >= phrase_limit,
                 }
+
+        if mode != "exact" and len(query_terms(query, mode)) >= 4:
+            return scan_records_by_timestamp()
 
         fts_query = fts_query_for_search(query, mode)
         if fts_query:
@@ -1738,34 +1776,9 @@ def search_history_records(query: str, limit: int, offset: int, mode: str = "sma
             except sqlite3.OperationalError:
                 pass
 
-        rows = conn.execute(
-            """
-            SELECT
-                kind, title, body, meta, url, folo_url,
-                folo_matched, folo_label, timestamp, tokens, payload_json
-            FROM records
-            ORDER BY timestamp DESC, rowid DESC
-            """
-        )
-        for row in rows:
-            record_tokens = set(str(row["tokens"] or "").split())
-            if not query_tokens.intersection(record_tokens):
-                continue
-            record = record_from_db_row(row)
-            if is_generated_summary_title(str(record.get("title") or "")) and not allow_generated_summary:
-                continue
-            search_text = " ".join([str(row["title"] or ""), str(row["body"] or ""), str(row["meta"] or "")])
-            record["score"] = index_match_score(query, {**record, "search_text": search_text}, mode)
-            if record["score"] <= 0:
-                continue
-            if matched_count < offset:
-                matched_count += 1
-                continue
-            if len(results) >= limit:
-                has_more = True
-                break
-            results.append(record)
-            matched_count += 1
+        scanned = scan_records_by_timestamp()
+        results = scanned.get("results", [])
+        has_more = bool(scanned.get("has_more"))
     finally:
         conn.close()
     known_total = offset + len(results) + (1 if has_more else 0)
