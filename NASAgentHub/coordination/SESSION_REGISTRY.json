@@ -69,6 +69,23 @@
       "control_level": "bridge",
       "last_message_summary": "等待微信指令",
       "last_heartbeat": null
+    },
+    {
+      "session_id": "session-supervisor-main-001",
+      "agent_id": "supervisor-agent",
+      "display_name": "AgentHub Supervisor / 主管调度会话",
+      "host": "agenthub",
+      "login_type": "internal-router",
+      "codex_client": "agenthub-supervisor",
+      "project_id": "agenthub",
+      "workspace_path_windows": "",
+      "workspace_path_ubuntu": "/home/mana/NASAgentHub",
+      "thread_ref": "internal-supervisor",
+      "status": "idle",
+      "current_task_id": null,
+      "control_level": "dispatch",
+      "last_message_summary": "等待调度任务",
+      "last_heartbeat": null
     }
   ]
 }

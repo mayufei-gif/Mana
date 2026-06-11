@@ -45,6 +45,17 @@
       "workspace_root": "/home/mana/NASAgentHub",
       "status": "running",
       "description": "负责把微信命令转发给 AgentHub Supervisor，并把结果摘要回传微信"
+    },
+    {
+      "agent_id": "supervisor-agent",
+      "name": "AgentHub Supervisor",
+      "host": "agenthub",
+      "agent_type": "supervisor",
+      "login_type": "internal-router",
+      "control_level": "dispatch",
+      "workspace_root": "/home/mana/NASAgentHub",
+      "status": "online",
+      "description": "负责解析 @ 提及、创建任务房间、调度下属 Agent 并汇总结果"
     }
   ]
 }
