@@ -712,6 +712,22 @@ main {
   word-break: break-word;
 }
 
+.openclaw-selfcheck-log {
+  margin: 12px 0 0;
+  min-height: 132px;
+  max-height: 260px;
+  padding: 13px;
+  overflow: auto;
+  border: 1px solid rgba(29, 115, 95, 0.22);
+  border-radius: 14px;
+  background: #f4faf7;
+  color: #17241f;
+  font-size: 12px;
+  line-height: 1.55;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
 .openclaw-template-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));

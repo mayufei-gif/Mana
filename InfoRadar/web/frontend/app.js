@@ -9,6 +9,9 @@ const CODEX_TERMINAL_FOLLOW_INTERVAL_MS = 100;
 const CODEX_TERMINAL_FOLLOW_TIMEOUT_MS = 10 * 60 * 1000;
 const CODEX_TERMINAL_IDLE_STABLE_TICKS = 8;
 const OPENCLAW_COMMANDS_KEY = "mana_openclaw_quick_commands_v1";
+const OPENCLAW_TARGETS_KEY = "mana_openclaw_custom_targets_v1";
+const OPENCLAW_SELF_CHECK_LOG_KEY = "mana_openclaw_selfcheck_log_v1";
+const OPENCLAW_BASE_TARGETS = ["codexapp", "codexapp1", "codexapp2", "codexapp3"];
 const WEB_TAB_NONCE_KEY = "inforadar_web_tab_nonce_v1";
 const LEGACY_WEB_TOKEN_KEY = "inforadar_web_token";
 const FOLO_SOURCE_TIMELINE_KEY = "folo_hive_source_timeline_v1";
@@ -61,6 +64,32 @@ function loadOpenClawCommands() {
 
 function saveOpenClawCommands(rows) {
   localStorage.setItem(OPENCLAW_COMMANDS_KEY, JSON.stringify(rows || []));
+}
+
+function loadOpenClawTargets() {
+  try {
+    const rows = JSON.parse(localStorage.getItem(OPENCLAW_TARGETS_KEY) || "[]");
+    return Array.isArray(rows) ? rows.filter((item) => item && typeof item === "object") : [];
+  } catch {
+    return [];
+  }
+}
+
+function saveOpenClawTargets(rows) {
+  localStorage.setItem(OPENCLAW_TARGETS_KEY, JSON.stringify(rows || []));
+}
+
+function loadOpenClawSelfCheckLogs() {
+  try {
+    const rows = JSON.parse(localStorage.getItem(OPENCLAW_SELF_CHECK_LOG_KEY) || "[]");
+    return Array.isArray(rows) ? rows.slice(-20) : [];
+  } catch {
+    return [];
+  }
+}
+
+function saveOpenClawSelfCheckLogs(rows) {
+  localStorage.setItem(OPENCLAW_SELF_CHECK_LOG_KEY, JSON.stringify((rows || []).slice(-20)));
 }
 
 function loadCodexSessionNames() {
@@ -130,6 +159,8 @@ const state = {
   resourceHiveCandidates: [],
   resourceArchivePlan: null,
   openclawCommands: loadOpenClawCommands(),
+  openclawTargets: loadOpenClawTargets(),
+  openclawSelfCheckLogs: loadOpenClawSelfCheckLogs(),
   codex: null,
   codexLogs: [],
   projects: [
@@ -2492,14 +2523,80 @@ function openClawSessionLabel(session) {
   return codexSessionDisplayName(session || "codex", session || "codex");
 }
 
+function openClawNowLabel() {
+  return new Date().toLocaleString("zh-CN", { hour12: false });
+}
+
+function normalizeOpenClawTarget(value) {
+  return String(value || "")
+    .trim()
+    .replace(/^\/+/, "")
+    .replace(/\s+/g, "-")
+    .toLowerCase();
+}
+
+function openClawTargetValid(target) {
+  return /^[a-z][a-z0-9_-]{1,31}$/.test(target || "");
+}
+
+function openClawTargetRows() {
+  const custom = state.openclawTargets || [];
+  const rows = OPENCLAW_BASE_TARGETS.map((target) => ({
+    target,
+    label: target,
+    purpose: target === "codexapp" ? "默认微信入口" : `固定 ${target} 会话`,
+    builtIn: true,
+  }));
+  custom.forEach((item) => {
+    const target = normalizeOpenClawTarget(item.target || item.name);
+    if (!target || rows.some((row) => row.target === target)) return;
+    rows.push({ ...item, target, label: item.label || target, builtIn: false });
+  });
+  return rows;
+}
+
+function upsertOpenClawTarget(target, purpose = "", label = "") {
+  const normalized = normalizeOpenClawTarget(target);
+  if (!openClawTargetValid(normalized)) {
+    throw new Error("新指令通道只支持 2-32 位英文、数字、下划线或短横线，且必须以英文字母开头");
+  }
+  if (OPENCLAW_BASE_TARGETS.includes(normalized)) return { target: normalized, builtIn: true };
+  const rows = (state.openclawTargets || []).filter((item) => normalizeOpenClawTarget(item.target || item.name) !== normalized);
+  const item = {
+    target: normalized,
+    label: label || normalized,
+    purpose: String(purpose || "").trim(),
+    created_at: new Date().toISOString(),
+    last_check: null,
+  };
+  state.openclawTargets = [item, ...rows].slice(0, 32);
+  saveOpenClawTargets(state.openclawTargets);
+  return item;
+}
+
+function renderOpenClawTargets(selected = $("#openclawTarget")?.value || "codexapp1") {
+  const select = $("#openclawTarget");
+  if (!select) return;
+  const rows = openClawTargetRows();
+  select.innerHTML = rows
+    .map((item) => `<option value="${escapeHtml(item.target)}">${escapeHtml(item.label || item.target)}${item.purpose ? ` · ${escapeHtml(item.purpose)}` : ""}</option>`)
+    .join("");
+  select.value = rows.some((item) => item.target === selected) ? selected : "codexapp1";
+  const count = $("#openclawTargetCount");
+  if (count) count.textContent = String(rows.length);
+}
+
 function openClawDraftFromForm() {
+  const customTarget = normalizeOpenClawTarget($("#openclawCustomTarget")?.value || "");
+  const selectedTarget = normalizeOpenClawTarget($("#openclawTarget")?.value || "codexapp1");
   return {
     id: `cmd-${Date.now().toString(36)}-${Math.random().toString(16).slice(2, 7)}`,
     name: ($("#openclawCommandName")?.value || "未命名指令").trim() || "未命名指令",
-    target: $("#openclawTarget")?.value || "codexapp1",
+    target: customTarget || selectedTarget || "codexapp1",
     policy: $("#openclawPolicy")?.value || "hold",
     session: $("#openclawSession")?.value || "codex",
     prompt: ($("#openclawPrompt")?.value || "").trim(),
+    purpose: ($("#openclawPurpose")?.value || "").trim(),
   };
 }
 
@@ -2515,6 +2612,8 @@ function openClawCodexInstruction(item) {
   return [
     "来自 Mana Hub 微信命令中心的任务。",
     `快捷指令：${item.name || "未命名指令"}`,
+    `指令通道：/${item.target || "codexapp1"}`,
+    `功能说明：${item.purpose || "未填写"}`,
     `微信命令：${slash}`,
     `调度策略：${openClawPolicyLabel(item.policy)}；目标：/${item.target || "codexapp1"}`,
     "",
@@ -2530,6 +2629,74 @@ function renderOpenClawPreview() {
   preview.textContent = draft.prompt ? openClawSlashCommand(draft) : `/${draft.target} ${draft.policy} <任务内容>`;
 }
 
+function renderOpenClawSelfCheckLog(lines = null) {
+  const box = $("#openclawSelfCheckLog");
+  if (!box) return;
+  const current = lines || state.openclawSelfCheckLogs || [];
+  box.textContent = current.length ? current.join("\n") : "等待自检。保存新通道或执行任务前会先做红绿联通性测试。";
+}
+
+function setOpenClawSelfCheckLog(lines) {
+  state.openclawSelfCheckLogs = lines.slice(-80);
+  saveOpenClawSelfCheckLogs(state.openclawSelfCheckLogs);
+  renderOpenClawSelfCheckLog(state.openclawSelfCheckLogs);
+}
+
+function appendOpenClawSelfCheckLog(line) {
+  setOpenClawSelfCheckLog([...(state.openclawSelfCheckLogs || []), line]);
+}
+
+async function openClawSelfCheck(item, options = {}) {
+  const draft = item || openClawDraftFromForm();
+  const target = normalizeOpenClawTarget(draft.target || "");
+  const session = draft.session || "codex";
+  const lines = [`== OpenClaw 自检 ${openClawNowLabel()} ==`];
+  let ok = true;
+  const add = (pass, name, detail) => {
+    ok = ok && pass;
+    lines.push(`${pass ? "[GREEN]" : "[RED]"} ${name} :: ${detail}`);
+    renderOpenClawSelfCheckLog(lines);
+  };
+
+  add(openClawTargetValid(target), "指令通道名称", target || "空");
+  add(Boolean(draft.purpose || OPENCLAW_BASE_TARGETS.includes(target)), "功能说明", draft.purpose || "固定通道可不填");
+  add(!options.requirePrompt || Boolean(draft.prompt), "指令内容", draft.prompt ? `${draft.prompt.length} 字` : "空");
+  add(Boolean(session), "网页执行会话", openClawSessionLabel(session));
+
+  if (ok) {
+    try {
+      const health = await api("/api/health");
+      add(Boolean(health?.ok), "Mana Hub API", health?.service || JSON.stringify(health));
+    } catch (err) {
+      add(false, "Mana Hub API", err.message);
+    }
+  }
+
+  if (ok) {
+    try {
+      const params = new URLSearchParams({ session, lines: "40" });
+      const data = await api(`/api/codex-terminal?${params.toString()}`);
+      add(Boolean(data?.ok), "Codex 会话读取", `${data?.session || session} · ${data?.entry_count ?? 0} 条缓存`);
+    } catch (err) {
+      add(false, "Codex 会话读取", err.message);
+    }
+  }
+
+  if (ok) {
+    try {
+      upsertOpenClawTarget(target, draft.purpose, target);
+      renderOpenClawTargets(target);
+      add(true, "微信会话下拉框", `已登记 /${target}`);
+    } catch (err) {
+      add(false, "微信会话下拉框", err.message);
+    }
+  }
+
+  lines.push(`${ok ? "[RESULT] PASS" : "[RESULT] FAIL"} ${openClawNowLabel()}`);
+  setOpenClawSelfCheckLog(lines);
+  return { ok, lines, target, session };
+}
+
 function openClawCommandById(id) {
   return state.openclawCommands.find((item) => item.id === id);
 }
@@ -2538,8 +2705,8 @@ function renderOpenClawCommandCenter() {
   const list = $("#openclawCommandList");
   if (!list) return;
   const rows = state.openclawCommands || [];
+  renderOpenClawTargets();
   $("#openclawSavedCount").textContent = String(rows.length);
-  $("#openclawTargetCount").textContent = "4";
   $("#openclawPolicyCount").textContent = "3";
   list.innerHTML = rows.length
     ? rows
@@ -2550,7 +2717,7 @@ function renderOpenClawCommandCenter() {
               <div>
                 <div class="item-title">${escapeHtml(item.name || "未命名指令")}</div>
                 <div class="item-meta">
-                  /${escapeHtml(item.target || "codexapp1")} · ${escapeHtml(openClawPolicyLabel(item.policy))} · ${escapeHtml(openClawSessionLabel(item.session))}
+                  /${escapeHtml(item.target || "codexapp1")} · ${escapeHtml(openClawPolicyLabel(item.policy))} · ${escapeHtml(openClawSessionLabel(item.session))}${item.purpose ? ` · ${escapeHtml(item.purpose)}` : ""}
                 </div>
                 <code>${escapeHtml(slash)}</code>
               </div>
@@ -2565,29 +2732,38 @@ function renderOpenClawCommandCenter() {
         })
         .join("")
     : `<div class="item">暂无快捷指令</div>`;
+  renderOpenClawSelfCheckLog();
   renderOpenClawPreview();
 }
 
 function fillOpenClawForm(item) {
   if (!item) return;
   $("#openclawCommandName").value = item.name || "";
+  renderOpenClawTargets(item.target || "codexapp1");
   $("#openclawTarget").value = item.target || "codexapp1";
   $("#openclawPolicy").value = item.policy || "hold";
   $("#openclawSession").value = item.session || "codex";
   $("#openclawPrompt").value = item.prompt || "";
+  $("#openclawCustomTarget").value = OPENCLAW_BASE_TARGETS.includes(item.target || "") ? "" : item.target || "";
+  $("#openclawPurpose").value = item.purpose || "";
   renderOpenClawPreview();
 }
 
-function saveOpenClawCommandFromForm() {
+async function saveOpenClawCommandFromForm() {
   const draft = openClawDraftFromForm();
   if (!draft.prompt) {
     showToast("指令内容不能为空");
     return;
   }
+  const check = await openClawSelfCheck(draft, { requirePrompt: true });
+  if (!check.ok) {
+    showToast("自检未通过，已停止保存");
+    return;
+  }
   state.openclawCommands = [draft, ...state.openclawCommands.filter((item) => item.name !== draft.name)].slice(0, 24);
   saveOpenClawCommands(state.openclawCommands);
   renderOpenClawCommandCenter();
-  showToast("快捷指令已保存");
+  showToast(`快捷指令已保存，/${check.target} 已加入微信会话`);
 }
 
 async function copyText(text) {
@@ -2615,8 +2791,14 @@ async function runOpenClawCommand(item) {
     showToast("指令内容不能为空");
     return;
   }
+  const check = await openClawSelfCheck(item, { requirePrompt: true });
+  if (!check.ok) {
+    renderOpenClawResult((check.lines || []).join("\n"));
+    showToast("自检未通过，已停止执行");
+    return;
+  }
   const session = item.session || "codex";
-  renderOpenClawResult(`正在发送到 ${openClawSessionLabel(session)}...\n\n${openClawCodexInstruction(item)}`);
+  renderOpenClawResult(`${(check.lines || []).join("\n")}\n\n正在发送到 ${openClawSessionLabel(session)}...\n\n${openClawCodexInstruction(item)}`);
   const data = await api("/api/codex-terminal/send", {
     method: "POST",
     body: JSON.stringify({ session, message: openClawCodexInstruction(item) }),
@@ -2977,9 +3159,12 @@ function bindCodexTerminal() {
 function bindOpenClawCommandCenter() {
   $("#openclawCommandForm")?.addEventListener("submit", (event) => {
     event.preventDefault();
-    saveOpenClawCommandFromForm();
+    saveOpenClawCommandFromForm().catch((err) => {
+      renderOpenClawResult(err.message);
+      showToast(err.message);
+    });
   });
-  ["openclawCommandName", "openclawTarget", "openclawPolicy", "openclawSession", "openclawPrompt"].forEach((id) => {
+  ["openclawCommandName", "openclawTarget", "openclawCustomTarget", "openclawPurpose", "openclawPolicy", "openclawSession", "openclawPrompt"].forEach((id) => {
     const input = $(`#${id}`);
     input?.addEventListener("input", renderOpenClawPreview);
     input?.addEventListener("change", renderOpenClawPreview);
@@ -2988,6 +3173,14 @@ function bindOpenClawCommandCenter() {
     copyText(openClawSlashCommand(openClawDraftFromForm()))
       .then(() => showToast("微信命令已复制"))
       .catch((err) => showToast(err.message));
+  });
+  $("#openclawSelfCheckBtn")?.addEventListener("click", () => {
+    openClawSelfCheck(openClawDraftFromForm(), { requirePrompt: true })
+      .then((result) => showToast(result.ok ? "OpenClaw 自检通过" : "OpenClaw 自检未通过"))
+      .catch((err) => {
+        appendOpenClawSelfCheckLog(`[RED] 自检异常 :: ${err.message}`);
+        showToast(err.message);
+      });
   });
   $("#openclawRunCurrentBtn")?.addEventListener("click", () => {
     runOpenClawCommand(openClawDraftFromForm()).catch((err) => {

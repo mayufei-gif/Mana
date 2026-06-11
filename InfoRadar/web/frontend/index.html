@@ -384,6 +384,14 @@
                     </select>
                   </label>
                   <label>
+                    <span>新指令通道</span>
+                    <input id="openclawCustomTarget" type="text" placeholder="例如 codexapp-course" />
+                  </label>
+                  <label>
+                    <span>功能说明</span>
+                    <input id="openclawPurpose" type="text" placeholder="说明这个指令负责什么任务" />
+                  </label>
+                  <label>
                     <span>策略</span>
                     <select id="openclawPolicy">
                       <option value="hold" selected>hold · 主管待定</option>
@@ -407,10 +415,12 @@
                 </label>
                 <pre class="openclaw-command-preview" id="openclawCommandPreview">/codexapp1 hold 登记这个任务，等我确认后再决定是否排队执行：</pre>
                 <div class="row-actions">
-                  <button type="submit">保存快捷指令</button>
+                  <button type="submit">保存并自检</button>
                   <button class="ghost" id="openclawCopyCurrentBtn" type="button">复制微信命令</button>
+                  <button class="ghost" id="openclawSelfCheckBtn" type="button">自检通道</button>
                   <button id="openclawRunCurrentBtn" type="button">网页执行</button>
                 </div>
+                <pre class="openclaw-selfcheck-log" id="openclawSelfCheckLog">等待自检。保存新通道或执行任务前会先做红绿联通性测试。</pre>
               </form>
             </article>
 
@@ -699,7 +709,7 @@
     </div>
 
     <div id="toast" class="toast hidden"></div>
-    <script src="/static/app.js?v=20260611-wechat-folo-open1"></script>
+    <script src="/static/app.js?v=20260611-openclaw-selfcheck1"></script>
     <script>
       (() => {
         const POLL_MS = 100;
