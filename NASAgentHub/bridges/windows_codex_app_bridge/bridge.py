@@ -66,7 +66,10 @@ class AgentHubClient:
 
     def request(self, method: str, path: str, payload: dict | None = None, params: dict | None = None) -> dict:
         data = None
-        headers = {"Accept": "application/json"}
+        headers = {
+            "Accept": "application/json",
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AgentHubWindowsBridge/0.1",
+        }
         if payload is not None:
             data = json.dumps(payload, ensure_ascii=False).encode("utf-8")
             headers["Content-Type"] = "application/json"
