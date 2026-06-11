@@ -132,20 +132,20 @@ def count_feed_items(xml_text: str) -> int:
 
 
 def classify_error(url: str, http_status: str, error: str, strategy: str = "") -> str:
-    lower = f"{url} {http_status} {error} {strategy}".lower()
+    error_lower = f"{http_status} {error} {strategy}".lower()
     if not rsshub_tools.is_http_url(url):
         return "URL异常"
     if http_status == "403":
         return "403访问限制"
     if http_status == "404":
         return "404源失效"
-    if "timed out" in lower or "timeout" in lower:
+    if "timed out" in error_lower or "timeout" in error_lower:
         return "网络超时"
-    if "xml" in lower or "parse" in lower or "mismatched tag" in lower:
-        return "XML解析失败"
-    if "empty" in lower or "0 items" in lower:
+    if "empty" in error_lower or "0 items" in error_lower:
         return "空内容"
-    if "decode" in lower or "encoding" in lower or "codec" in lower:
+    if "xml" in error_lower or "parse" in error_lower or "mismatched tag" in error_lower:
+        return "XML解析失败"
+    if "decode" in error_lower or "encoding" in error_lower or "codec" in error_lower:
         return "编码错误"
     if strategy == "rsshub_primary":
         return "RSSHub主实例失败"

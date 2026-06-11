@@ -2065,15 +2065,24 @@ function renderRadarHealth() {
   const currentHiveBytes = state.currentHiveItems?.length ? textByteLength(JSON.stringify(state.currentHiveItems)) : 0;
   const inventorySizeText = health.search_index_size_text || formatBytes(health.search_index_size_bytes || health.search_index_bytes || currentHiveBytes);
   const schedule = beijingInspectionWindow();
+  const backendScheduleTimes = Array.isArray(health.schedule_beijing_times) ? health.schedule_beijing_times.filter(Boolean) : [];
+  const expectedScheduleTimes = Array.isArray(health.schedule_expected_beijing_times) ? health.schedule_expected_beijing_times.filter(Boolean) : [];
+  const scheduleTimes = backendScheduleTimes.length ? backendScheduleTimes : expectedScheduleTimes.length ? expectedScheduleTimes : ["08:30", "11:30", "17:30", "21:30"];
+  const scheduleStateText = health.schedule_configured
+    ? `自动任务已配置（${health.schedule_type || "crontab"}）`
+    : "未检测到自动任务";
+  const scheduleNoteText = health.schedule_configured && health.schedule_type === "crontab"
+    ? "用户级 crontab 每天自动更新四遍 InfoRadar"
+    : (health.schedule_note || "自动任务状态待检测");
   const lastActualFinished = health.daily_automation_finished_at || health.last_finished_at || health.search_index_built_at || "";
   const lastActualAge = health.daily_automation_age_hours ?? health.age_hours;
   const lines = [
-    `今日全网检索（北京时间）：08:30 / 11:30 / 17:30 / 21:30 信息抓取；当前窗口：${schedule.label}；下次抓取：${schedule.nextLabel}`,
+    `今日全网检索（北京时间）：${scheduleTimes.join(" / ")} 信息抓取；当前窗口：${schedule.label}；下次抓取：${schedule.nextLabel}；${scheduleStateText}`,
     `最近实际完成：${formatBeijingDateTime(lastActualFinished, true)}（${formatAgeHours(lastActualAge)}）；服务器原始时区：UTC，页面已换算为北京时间`,
     `Folo 直查源成功：${foloReady}/${foloTotal} 条，成功比例 ${formatRatio(foloRatio)}；仅统计可跳转 Folo 且能高亮定位的条目`,
     `当前卡片：此次新增 ${metrics.totalNew} 条；Folo 新增 ${metrics.foloNewIdCount} 条；Folo源条ID ${foloBaseIdCount}+${metrics.foloNewIdCount} 条；库存总条目 ${inventoryBase}+${metrics.totalNew} 条`,
     `现库存总条目：${inventoryTotal} 条；完成时间：${formatBeijingDateTime(health.search_index_built_at || health.last_finished_at, true)}；总体积容量：${inventorySizeText}`,
-    `缓存兜底：${health.cache_fallback_used ? `使用，补入 ${health.cache_fallback_added_count || 0} 条` : "未使用"}；用户级 crontab 每天自动更新四遍 InfoRadar`,
+    `缓存兜底：${health.cache_fallback_used ? `使用，补入 ${health.cache_fallback_added_count || 0} 条` : "未使用"}；${scheduleNoteText}`,
   ];
   if ((health.daily_automation_failed_count || 0) > 0) {
     lines.push(`失败步骤：${(health.daily_automation_failed_commands || []).join("、") || "未记录"}`);
