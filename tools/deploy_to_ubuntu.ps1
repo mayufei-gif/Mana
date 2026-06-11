@@ -80,6 +80,16 @@ for path in \
   fi
 done
 
+rm -rf \
+  "$REMOTE_BASE/InfoRadar/web" \
+  "$REMOTE_BASE/InfoRadar/scripts" \
+  "$REMOTE_BASE/InfoRadar/config" \
+  "$REMOTE_BASE/InfoRadar/sources" \
+  "$REMOTE_BASE/NASAgentHub/coordination" \
+  "$REMOTE_BASE/NASAgentHub/shared" \
+  "$REMOTE_BASE/NASAgentHub/agents" \
+  "$REMOTE_BASE/CourseMindNAS"
+
 cp -a "$RELEASE_ROOT/InfoRadar/." "$REMOTE_BASE/InfoRadar/"
 cp -a "$RELEASE_ROOT/NASAgentHub/." "$REMOTE_BASE/NASAgentHub/"
 cp -a "$RELEASE_ROOT/CourseMindNAS/." "$REMOTE_BASE/CourseMindNAS/"
