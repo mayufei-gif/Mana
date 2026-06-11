@@ -2389,7 +2389,19 @@ def agenthub_update_session_message(root: Path, message_id: str, patch: dict) ->
     target = str(message_id or "").strip()
     if not target:
         raise HTTPException(status_code=400, detail="message_id 不能为空")
-    allowed = {"status", "delivery", "bridge_status", "bridge_id", "handoff_path", "thread_ref", "error", "note", "updated_at"}
+    allowed = {
+        "status",
+        "delivery",
+        "bridge_status",
+        "bridge_id",
+        "handoff_path",
+        "handoff_content",
+        "thread_ref",
+        "error",
+        "note",
+        "copied_at",
+        "updated_at",
+    }
     clean_patch = {key: value for key, value in patch.items() if key in allowed and value is not None}
     clean_patch["updated_at"] = agenthub_now()
     with AGENTHUB_LOCK:
@@ -2485,8 +2497,15 @@ def agenthub_append_session_message(
             },
         )
         if in_reply_to:
+            reply_delivery = str(delivery or "")
+            if reply_delivery == "manual-reply":
+                reply_patch = {"status": "codex-replied", "delivery": "manual-reply"}
+            elif reply_delivery in {"app-server-reply", "app-server-replied"}:
+                reply_patch = {"status": "app-server-replied", "delivery": "app-server-replied"}
+            else:
+                reply_patch = {"status": "replied", "delivery": "bridge-replied"}
             try:
-                agenthub_update_session_message(root, in_reply_to, {"status": "replied", "delivery": "bridge-replied"})
+                agenthub_update_session_message(root, in_reply_to, reply_patch)
             except HTTPException:
                 pass
             if role == "codex":
@@ -4065,6 +4084,8 @@ def get_agenthub() -> dict:
     agents = read_agenthub_json(root, "coordination/AGENT_STATUS.json")
     heartbeats = read_agenthub_json(root, "coordination/AGENT_HEARTBEATS.json")
     codex_threads = read_agenthub_json(root, "coordination/CODEX_APP_THREADS.json")
+    sessions = agenthub_items(agenthub_read_sessions(root))
+    session_messages = agenthub_read_all_session_messages(root)[-120:]
     locks = read_agenthub_json(root, "coordination/LOCKS.json")
     task_items = tasks.get("items", [])
     events = read_agenthub_events(root)
@@ -4077,6 +4098,8 @@ def get_agenthub() -> dict:
         "projects": projects.get("items", []),
         "tasks": task_items,
         "agents": activity_agents,
+        "sessions": sessions,
+        "session_messages": session_messages,
         "codex_threads": codex_threads.get("items", []),
         "codex_threads_updated_at": str(codex_threads.get("updated_at", "")),
         "codex_threads_privacy_mode": str(codex_threads.get("privacy_mode", "")),
@@ -4139,6 +4162,30 @@ def get_agenthub_session(session_id: str, request: Request) -> dict:
     return {"ok": True, "session": session}
 
 
+@app.post("/api/agenthub/sessions/{session_id}/manual-reply", dependencies=[Depends(require_agenthub_queue_access)])
+async def post_agenthub_session_manual_reply(session_id: str, request: Request) -> dict:
+    try:
+        payload = await request.json()
+    except Exception as exc:
+        raise HTTPException(status_code=400, detail="请求格式错误") from exc
+    if not isinstance(payload, dict):
+        raise HTTPException(status_code=400, detail="请求格式错误")
+    root = agenthub_required_root()
+    agenthub_find_session(root, session_id)
+    message = agenthub_append_session_message(
+        root,
+        session_id,
+        str(payload.get("content") or payload.get("message") or ""),
+        role="codex",
+        source=str(payload.get("source") or "manual-web-reply"),
+        task_id=str(payload.get("task_id") or "") or None,
+        in_reply_to=str(payload.get("in_reply_to") or payload.get("inReplyTo") or "") or None,
+        status="codex-replied",
+        delivery="manual-reply",
+    )
+    return {"ok": True, "message": message}
+
+
 @app.get("/api/agenthub/sessions/{session_id}/messages")
 def get_agenthub_session_messages(session_id: str, request: Request, limit: int = Query(default=80, ge=1, le=300)) -> dict:
     require_agenthub_queue_access(request)
@@ -4175,6 +4222,24 @@ def get_agenthub_bridge_pending(
     if session_id:
         agenthub_find_session(root, session_id)
     return {"ok": True, "messages": agenthub_pending_bridge_messages(root, session_id=session_id, limit=limit)}
+
+
+@app.post("/api/agenthub/messages/{message_id}/manual-copied", dependencies=[Depends(require_agenthub_queue_access)])
+async def post_agenthub_message_manual_copied(message_id: str, request: Request) -> dict:
+    root = agenthub_required_root()
+    now = agenthub_now()
+    updated = agenthub_update_session_message(
+        root,
+        message_id,
+        {
+            "status": "manual-copied",
+            "delivery": "manual-handoff",
+            "bridge_status": "manual-copied",
+            "copied_at": now,
+            "note": "Handoff content was copied from AgentHub web console for manual Codex App delivery.",
+        },
+    )
+    return {"ok": True, "message": updated}
 
 
 @app.post("/api/agenthub/bridge/messages/{message_id}/status")

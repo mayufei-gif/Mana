@@ -869,6 +869,117 @@ function selectAgent(agentId, scroll = true) {
   }
 }
 
+function selectAgentHubSession(sessionId, scroll = true) {
+  state.selectedAgentHubSessionId = sessionId || "";
+  renderAgentHubSessions(state.agenthub || {});
+  if (scroll) {
+    $("#agentSessionDetail")?.scrollIntoView({ behavior: "smooth", block: "start" });
+  }
+}
+
+function agentHubSessionMessages(sessionId) {
+  return (state.agenthub?.session_messages || []).filter((item) => item.session_id === sessionId);
+}
+
+function latestAgentHubHandoff(messages) {
+  return (messages || []).find((item) => item.handoff_path || item.handoff_content || item.delivery === "manual-handoff");
+}
+
+function agentHubHandoffText(message) {
+  if (!message) return "";
+  return (
+    message.handoff_content ||
+    `AgentHub Handoff\n\nmessage_id: ${message.message_id || ""}\ntask_id: ${message.task_id || ""}\nsession_id: ${message.session_id || ""}\nagent_id: ${message.agent_id || ""}\n\n${message.content || ""}`
+  );
+}
+
+function renderAgentHubSessions(data) {
+  const wall = $("#agentSessionWall");
+  const detail = $("#agentSessionDetail");
+  if (!wall || !detail) return;
+  const sessions = data.sessions || [];
+  if (!state.selectedAgentHubSessionId && sessions.length) {
+    state.selectedAgentHubSessionId = sessions[0].session_id || "";
+  }
+  if (state.selectedAgentHubSessionId && !sessions.some((session) => session.session_id === state.selectedAgentHubSessionId)) {
+    state.selectedAgentHubSessionId = sessions[0]?.session_id || "";
+  }
+  wall.innerHTML = sessions.length
+    ? sessions
+        .map((session) => {
+          const id = session.session_id || "";
+          const active = id === state.selectedAgentHubSessionId;
+          return `
+            <div class="item agent-session-card ${active ? "selected" : ""}" data-agenthub-session="${escapeHtml(id)}" role="button" tabindex="0">
+              <div class="item-title">${escapeHtml(session.display_name || id)}</div>
+              <div class="item-meta">${escapeHtml(id)} · ${escapeHtml(session.agent_id || "未绑定")} · ${escapeHtml(session.login_type || "unknown")}</div>
+              <div class="item-meta">状态：${escapeHtml(statusText(session.status))} · 项目：${escapeHtml(session.project_id || "未分配")}</div>
+              <div class="item-meta">控制：${escapeHtml(session.control_level || "未声明")}</div>
+              <code>${escapeHtml(session.workspace_path_windows || session.workspace_path_ubuntu || "未登记路径")}</code>
+            </div>
+          `;
+        })
+        .join("")
+    : `<div class="item"><div class="item-meta">暂无 session 注册记录</div></div>`;
+
+  const session = sessions.find((item) => item.session_id === state.selectedAgentHubSessionId);
+  if (!session) {
+    detail.innerHTML = `<div class="item"><div class="item-meta">选择一个 Codex 会话查看 handoff 和回填入口。</div></div>`;
+    return;
+  }
+  const messages = agentHubSessionMessages(session.session_id).slice(-12).reverse();
+  const handoff = latestAgentHubHandoff(messages);
+  detail.innerHTML = `
+    <div class="item agent-session-detail-card">
+      <div class="item-title">${escapeHtml(session.display_name || session.session_id)}</div>
+      <div class="item-meta">session：${escapeHtml(session.session_id)} · agent：${escapeHtml(session.agent_id || "")}</div>
+      <div class="item-meta">thread_ref：${escapeHtml(session.thread_ref || "pending-bind")} · 当前任务：${escapeHtml(session.current_task_id || "无")}</div>
+      <div class="item-meta">Windows：${escapeHtml(session.workspace_path_windows || "未登记")}</div>
+      <div class="item-meta">Ubuntu：${escapeHtml(session.workspace_path_ubuntu || "未登记")}</div>
+    </div>
+    <div class="item handoff-panel ${handoff ? "" : "muted-panel"}">
+      <div class="item-title">最新 Handoff</div>
+      <div class="item-meta">状态：${escapeHtml(statusText(handoff?.status || "无"))} · 投递：${escapeHtml(statusText(handoff?.delivery || "无"))}</div>
+      <div class="item-meta">文件：${escapeHtml(handoff?.handoff_path || "当前没有 handoff 文件")}</div>
+      <div class="item-actions">
+        <button class="secondary" type="button" data-agenthub-copy-handoff="${escapeHtml(handoff?.message_id || "")}" ${handoff ? "" : "disabled"}>复制 handoff 内容</button>
+      </div>
+    </div>
+    <form class="agenthub-reply-form" data-agenthub-reply-session="${escapeHtml(session.session_id)}">
+      <label for="agenthubReplyMessage">人工回填 Codex 回复</label>
+      <textarea id="agenthubReplyMessage" rows="5" placeholder="把对应 Codex App 会话的回复粘贴到这里。"></textarea>
+      <div class="terminal-form-actions">
+        <span>回填后写入 SESSION_MESSAGES.ndjson，delivery=manual-reply</span>
+        <button type="submit">回填回复</button>
+      </div>
+    </form>
+    <div class="agenthub-message-list">
+      ${
+        messages.length
+          ? messages
+              .map(
+                (message) => `
+                  <div class="codex-message ${message.role === "codex" ? "assistant" : message.role === "supervisor" ? "user" : "event"}">
+                    <div class="codex-message-top">
+                      <span>${escapeHtml(message.role || "message")} · ${escapeHtml(statusText(message.status))} · ${escapeHtml(statusText(message.delivery))}</span>
+                      <span>${escapeHtml(message.created_at || "")}</span>
+                    </div>
+                    <div class="codex-message-text">${escapeHtml(message.content || "")}</div>
+                    ${
+                      message.handoff_path
+                        ? `<div class="codex-message-text"><code>${escapeHtml(message.handoff_path)}</code></div>`
+                        : ""
+                    }
+                  </div>
+                `
+              )
+              .join("")
+          : `<div class="item"><div class="item-meta">暂无会话消息</div></div>`
+      }
+    </div>
+  `;
+}
+
 function renderAgentHub(data) {
   state.agenthub = data;
   $("#agentHubRoot").textContent = data.root || "AgentHub";
@@ -941,6 +1052,7 @@ function renderAgentHub(data) {
         )
         .join("")
     : `<div class="item"><div class="item-meta">暂无角色状态</div></div>`;
+  renderAgentHubSessions(data);
   renderAgentDetail(agents.find((agent) => agent.agent_id === state.selectedAgentId));
 }
 
@@ -3191,8 +3303,67 @@ function bindProjectShell() {
     if (!card) return;
     selectAgent(card.dataset.agentId || "", true);
   });
+  document.addEventListener("click", (event) => {
+    const copyButton = event.target.closest("button[data-agenthub-copy-handoff]");
+    if (copyButton) {
+      const messageId = copyButton.dataset.agenthubCopyHandoff || "";
+      const message = (state.agenthub?.session_messages || []).find((item) => item.message_id === messageId);
+      if (!message) {
+        showToast("没有可复制的 handoff");
+        return;
+      }
+      copyText(agentHubHandoffText(message))
+        .then(async () => {
+          if (messageId) {
+            await api(`/api/agenthub/messages/${encodeURIComponent(messageId)}/manual-copied`, { method: "POST", body: JSON.stringify({}) });
+            await loadAgentHub();
+          }
+          showToast("Handoff 已复制并标记 manual-copied");
+        })
+        .catch((err) => showToast(err.message));
+      return;
+    }
+    const sessionCard = event.target.closest(".agent-session-card[data-agenthub-session]");
+    if (sessionCard) {
+      selectAgentHubSession(sessionCard.dataset.agenthubSession || "", true);
+    }
+  });
+  document.addEventListener("submit", (event) => {
+    const form = event.target.closest(".agenthub-reply-form[data-agenthub-reply-session]");
+    if (!form) return;
+    event.preventDefault();
+    const sessionId = form.dataset.agenthubReplySession || "";
+    const textarea = form.querySelector("textarea");
+    const content = textarea?.value?.trim() || "";
+    if (!content) {
+      showToast("回填内容不能为空");
+      return;
+    }
+    const messages = agentHubSessionMessages(sessionId).slice().reverse();
+    const inReplyTo = messages.find((item) => ["handoff-ready", "manual-copied"].includes(item.status) || item.delivery === "manual-handoff")?.message_id || "";
+    api(`/api/agenthub/sessions/${encodeURIComponent(sessionId)}/manual-reply`, {
+      method: "POST",
+      body: JSON.stringify({
+        content,
+        in_reply_to: inReplyTo,
+        task_id: messages.find((item) => item.message_id === inReplyTo)?.task_id || "",
+      }),
+    })
+      .then(async () => {
+        if (textarea) textarea.value = "";
+        await loadAgentHub();
+        showToast("Codex 回复已回填");
+      })
+      .catch((err) => showToast(err.message));
+  });
   document.addEventListener("keydown", (event) => {
     if (!["Enter", " "].includes(event.key)) return;
+    const sessionCard = event.target.closest(".agent-session-card[data-agenthub-session]");
+    if (sessionCard) {
+      event.preventDefault();
+      selectAgentHubSession(sessionCard.dataset.agenthubSession || "", true);
+      return;
+    }
     const card = event.target.closest(".agent-status-card[data-agent-id]");
     if (!card) return;
     event.preventDefault();

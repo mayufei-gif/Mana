@@ -1305,6 +1305,69 @@ main {
   align-items: start;
 }
 
+.agent-session-card {
+  cursor: pointer;
+  transition:
+    border-color 0.18s ease,
+    background 0.18s ease,
+    transform 0.18s ease;
+}
+
+.agent-session-card:hover,
+.agent-session-card.selected {
+  border-color: rgba(22, 101, 52, 0.32);
+  background: #f3fbf5;
+}
+
+.agent-session-card.selected {
+  box-shadow: inset 3px 0 0 var(--mint);
+}
+
+.agent-session-card code,
+.handoff-panel code {
+  display: block;
+  margin-top: 7px;
+  color: #20352d;
+  font-size: 12px;
+  line-height: 1.45;
+  white-space: normal;
+  word-break: break-all;
+}
+
+.agent-session-detail-card .item-meta {
+  word-break: break-word;
+}
+
+.handoff-panel.muted-panel {
+  opacity: 0.76;
+}
+
+.agenthub-reply-form {
+  display: grid;
+  gap: 9px;
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: #fff;
+}
+
+.agenthub-reply-form label {
+  color: var(--text);
+  font-size: 13px;
+  font-weight: 900;
+}
+
+.agenthub-reply-form textarea {
+  width: 100%;
+  min-height: 118px;
+  resize: vertical;
+}
+
+.agenthub-message-list {
+  display: grid;
+  gap: 8px;
+}
+
 .path-list {
   display: grid;
   gap: 9px;
