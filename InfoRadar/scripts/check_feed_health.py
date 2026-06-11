@@ -9,8 +9,10 @@ import json
 import os
 import re
 import os
+import shutil
 import socket
 import os
+import subprocess
 import time
 import os
 import urllib.error
@@ -302,7 +304,74 @@ def load_cache_keys() -> set[str]:
     return keys
 
 
+def probe_url_with_curl(url: str, timeout: int, max_bytes: int) -> tuple[bool, str, str, str] | None:
+    curl = shutil.which("curl")
+    if not curl:
+        return None
+    marker = b"\n__INFORADAR_HTTP_STATUS__:"
+    cmd = [
+        curl,
+        "-L",
+        "--silent",
+        "--show-error",
+        "--max-time",
+        str(max(1, timeout)),
+        "--connect-timeout",
+        str(max(1, min(timeout, 4))),
+        "--range",
+        f"0-{max_bytes}",
+        "-A",
+        "InfoRadarFeedHealth/0.3",
+        "-H",
+        "Accept: application/rss+xml, application/atom+xml, application/xml, text/xml, */*",
+        "-w",
+        "\n__INFORADAR_HTTP_STATUS__:%{http_code}",
+        url,
+    ]
+    try:
+        proc = subprocess.run(
+            cmd,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            timeout=max(2, timeout + 3),
+            check=False,
+        )
+    except subprocess.TimeoutExpired as exc:
+        return False, "ERR", "网络超时", f"curl timeout after {timeout}s: {exc!r}"[:220]
+    except Exception as exc:
+        return None
+
+    raw = proc.stdout or b""
+    stderr = (proc.stderr or b"").decode("utf-8", errors="replace").strip()
+    content = raw
+    status = "ERR"
+    if marker in raw:
+        content, status_raw = raw.rsplit(marker, 1)
+        status = status_raw.decode("ascii", errors="ignore").strip() or "ERR"
+    if proc.returncode != 0 and not content:
+        return False, status, "", (stderr or f"curl returncode={proc.returncode}")[:220]
+    if status.isdigit() and int(status) >= 400:
+        return False, status, "", (stderr or f"HTTP {status}")[:220]
+    if not content:
+        return False, status, "空内容", "empty response"
+    try:
+        xml_text = decode_response(content[:max_bytes], {"Content-Type": ""})
+        item_count = count_feed_items(xml_text)
+    except ET.ParseError as exc:
+        return False, status, "XML解析失败", repr(exc)[:220]
+    except UnicodeError as exc:
+        return False, "ERR", "编码错误", repr(exc)[:220]
+    except Exception as exc:
+        return False, status, "", repr(exc)[:220]
+    if item_count <= 0:
+        return False, status, "空内容", "0 items"
+    return True, status, "", f"{item_count} items"
+
+
 def probe_url(url: str, timeout: int, max_bytes: int) -> tuple[bool, str, str, str]:
+    curl_result = probe_url_with_curl(url, timeout, max_bytes)
+    if curl_result is not None:
+        return curl_result
     try:
         req = urllib.request.Request(
             url,
