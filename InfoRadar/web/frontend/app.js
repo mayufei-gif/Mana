@@ -977,11 +977,10 @@ function renderAgentHub(data) {
   renderProjects();
 
   const projects = data.projects || [];
-  const tasks = (data.tasks || []).slice(0, 10);
   const agents = data.agents || [];
   $("#agentProjectCount").textContent = String(projects.length);
-  $("#agentTaskCount").textContent = String(data.tasks?.length || 0);
-  $("#agentRoleCount").textContent = String(agents.length);
+  $("#agentTaskCount").textContent = String(data.sessions?.length || 0);
+  $("#agentRoleCount").textContent = String(data.session_messages?.length || 0);
   $("#agentHubProjectList").innerHTML = projects.length
     ? projects
         .map(
@@ -997,21 +996,6 @@ function renderAgentHub(data) {
         )
         .join("")
     : `<div class="item"><div class="item-meta">暂无项目注册记录</div></div>`;
-
-  $("#taskBoard").innerHTML = tasks.length
-    ? tasks
-        .map(
-          (task) => `
-            <div class="item">
-              <div class="item-title">${escapeHtml(task.task_id)} · ${escapeHtml(task.title)}</div>
-              <div class="item-meta">
-                项目：${escapeHtml(task.project_id)} · 负责人：${escapeHtml(task.owner_agent)} · 状态：${escapeHtml(statusText(task.status))} · 优先级：${escapeHtml(task.priority)}
-              </div>
-            </div>
-          `
-        )
-        .join("")
-    : `<div class="item"><div class="item-meta">暂无任务</div></div>`;
 
   renderAgentHubSessions(data);
 }
@@ -2545,7 +2529,6 @@ async function loadAgentHub() {
   if (data.ok) {
     renderAgentHub(data);
   } else {
-    $("#taskBoard").innerHTML = `<div class="item"><div class="item-meta">${escapeHtml(data.error || "AgentHub 未连接")}</div></div>`;
     $("#agentSessionWall").innerHTML = `<div class="item"><div class="item-meta">等待 AgentHub 初始化</div></div>`;
     $("#agentSessionDetail").innerHTML = `<div class="item"><div class="item-meta">等待会话注册表</div></div>`;
   }
