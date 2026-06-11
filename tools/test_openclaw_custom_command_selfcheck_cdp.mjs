@@ -2,12 +2,44 @@ import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { spawn } from "node:child_process";
+import { createHmac } from "node:crypto";
 
 const edgePath = "C:/Program Files (x86)/Microsoft/Edge/Application/msedge.exe";
 const url = process.argv[2] ?? "https://inforadar.mana-mana.top/#openclaw";
 const port = Number(process.env.CDP_PORT ?? 9362);
 const profileDir = await mkdtemp(join(tmpdir(), "openclaw-selfcheck-edge-"));
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+const accessToken = process.env.OPENCLAW_TEST_TOKEN || "";
+const totpCode = process.env.OPENCLAW_TEST_TOTP || "";
+const totpSecret = process.env.OPENCLAW_TEST_TOTP_SECRET || "";
+
+function base32Decode(value) {
+  const alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZ234567";
+  const cleaned = String(value || "").replace(/\s+/g, "").replace(/=+$/g, "").toUpperCase();
+  let bits = "";
+  for (const char of cleaned) {
+    const index = alphabet.indexOf(char);
+    if (index < 0) throw new Error("Invalid base32 TOTP secret");
+    bits += index.toString(2).padStart(5, "0");
+  }
+  const bytes = [];
+  for (let offset = 0; offset + 8 <= bits.length; offset += 8) {
+    bytes.push(Number.parseInt(bits.slice(offset, offset + 8), 2));
+  }
+  return Buffer.from(bytes);
+}
+
+function generateTotp(secret, timestamp = Date.now()) {
+  if (!secret) return "";
+  const counter = Math.floor(timestamp / 1000 / 30);
+  const counterBuffer = Buffer.alloc(8);
+  counterBuffer.writeUInt32BE(Math.floor(counter / 0x100000000), 0);
+  counterBuffer.writeUInt32BE(counter >>> 0, 4);
+  const digest = createHmac("sha1", base32Decode(secret)).update(counterBuffer).digest();
+  const offset = digest[digest.length - 1] & 0x0f;
+  const code = ((digest.readUInt32BE(offset) & 0x7fffffff) % 1000000).toString().padStart(6, "0");
+  return code;
+}
 
 const edge = spawn(edgePath, [
   "--headless=new",
@@ -78,6 +110,44 @@ try {
   });
   await send("Page.navigate", { url });
   await sleep(3000);
+
+  if (accessToken) {
+    const loginExpression = `(${async function (token, totp) {
+      const res = await fetch("/api/session", {
+        method: "POST",
+        credentials: "same-origin",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ token, totp })
+      });
+      const text = await res.text();
+      let data = {};
+      try {
+        data = JSON.parse(text);
+      } catch {
+        data = { raw: text };
+      }
+      if (!res.ok || !data.authenticated) {
+        return { ok: false, status: res.status, data };
+      }
+      if (data.tab_nonce) {
+        sessionStorage.setItem("inforadar_web_tab_nonce_v1", data.tab_nonce);
+      }
+      return { ok: true, status: res.status, authenticated: Boolean(data.authenticated) };
+    }})(${JSON.stringify(accessToken)}, ${JSON.stringify(totpCode || generateTotp(totpSecret))})`;
+    const loginResult = await send("Runtime.evaluate", {
+      expression: loginExpression,
+      awaitPromise: true,
+      returnByValue: true
+    });
+    const login = loginResult.result.value;
+    if (!login?.ok) {
+      console.log(JSON.stringify({ ok: false, reason: "login failed", login }, null, 2));
+      process.exitCode = 1;
+      throw new Error("OpenClaw test login failed");
+    }
+    await send("Page.navigate", { url });
+    await sleep(2500);
+  }
 
   const commandName = `codexapp-selfcheck-${Date.now().toString(36)}`;
   const expression = `(${async function (targetName) {
