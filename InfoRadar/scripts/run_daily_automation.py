@@ -14,6 +14,9 @@ DEFAULT_RETURN_DIR = Path(r"G:\E盘\工作项目文件\NAS回传\FOLO") if os.na
 LOG_DIR = ROOT / "logs"
 RUN_LOG = LOG_DIR / "daily_automation.log"
 STATE_JSON = LOG_DIR / "daily_automation_latest.json"
+LATEST_STATUS_JSON = LOG_DIR / "latest_status.json"
+RETURN_LATEST_STATUS_JSON = DEFAULT_RETURN_DIR / "latest_status.json"
+RETURN_LATEST_STATUS_SUMMARY = DEFAULT_RETURN_DIR / "latest_status_微信摘要.txt"
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
@@ -120,6 +123,48 @@ def append_jsonl(path: Path, data: dict) -> None:
         handle.write(json.dumps(data, ensure_ascii=False) + "\n")
 
 
+def automation_summary(payload: dict) -> str:
+    commands = payload.get("commands") if isinstance(payload.get("commands"), list) else []
+    failed = [item for item in commands if isinstance(item, dict) and not item.get("success")]
+    lines = [
+        "【InfoRadar 自动巡检】",
+        "",
+        f"命令：{payload.get('command') or '自动巡检'}",
+        f"状态：{payload.get('status') or ('success' if payload.get('ok') else 'failed')}",
+        f"开始时间：{payload.get('started_at') or '-'}",
+        f"完成时间：{payload.get('finished_at') or '-'}",
+        f"步骤：{len(commands)} 个，成功 {len(commands) - len(failed)} 个，失败 {len(failed)} 个",
+    ]
+    if commands:
+        lines.extend(["", "执行步骤："])
+        for item in commands:
+            if not isinstance(item, dict):
+                continue
+            mark = "OK" if item.get("success") else "FAIL"
+            lines.append(f"- [{mark}] {item.get('command') or '未命名步骤'}")
+    if failed:
+        lines.extend(["", "失败步骤："])
+        for item in failed[:6]:
+            error = item.get("stderr_tail") or item.get("stdout_tail") or "未记录错误"
+            lines.append(f"- {item.get('command') or '未命名步骤'}：{str(error).strip()[:240]}")
+    return "\n".join(lines)
+
+
+def write_daily_status(payload: dict) -> dict:
+    status = {
+        **payload,
+        "command": payload.get("command") or "自动巡检",
+        "status": payload.get("status") or ("success" if payload.get("ok") else "failed"),
+    }
+    for path in [STATE_JSON, LATEST_STATUS_JSON, RETURN_LATEST_STATUS_JSON]:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(json.dumps(status, ensure_ascii=False, indent=2), encoding="utf-8")
+    RETURN_LATEST_STATUS_SUMMARY.parent.mkdir(parents=True, exist_ok=True)
+    RETURN_LATEST_STATUS_SUMMARY.write_text(automation_summary(status), encoding="utf-8")
+    append_jsonl(RUN_LOG, status)
+    return status
+
+
 def main() -> int:
     os.environ.setdefault("INFORADAR_RETURN_DIR", str(DEFAULT_RETURN_DIR))
     os.environ.setdefault("LANG", "C.UTF-8")
@@ -135,13 +180,14 @@ def main() -> int:
     ok = all(item["success"] for item in results)
     payload = {
         "ok": ok,
+        "command": "自动巡检",
+        "status": "success" if ok else "failed",
         "started_at": started,
         "finished_at": now_text(),
         "commands": results,
     }
-    append_jsonl(RUN_LOG, payload)
-    STATE_JSON.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
-    print(json.dumps(payload, ensure_ascii=False, indent=2))
+    status = write_daily_status(payload)
+    print(json.dumps(status, ensure_ascii=False, indent=2))
     return 0 if ok else 1
 
 

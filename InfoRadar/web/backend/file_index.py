@@ -43,6 +43,7 @@ SEARCH_RESULT_CACHE_TTL_SECONDS = 300
 SEARCH_RESULT_CACHE_MAX_ITEMS = 128
 DAILY_AUTOMATION_STATE_JSON = ROOT / "logs" / "daily_automation_latest.json"
 INSPECTION_INTERVAL_STATE_JSON = ROOT / "data" / "folo_hive" / "inspection_interval.json"
+EXPECTED_AUTOMATION_BEIJING_TIMES = ["08:30", "11:30", "17:30", "21:30"]
 
 
 def now_iso() -> str:
@@ -140,6 +141,32 @@ def list_return_files(limit: int = 200) -> list[dict]:
     return [file_entry(path) for path in files[:limit]]
 
 
+def automation_cron_beijing_times(cron_text: str) -> list[str]:
+    times: set[str] = set()
+    for line in str(cron_text or "").splitlines():
+        stripped = line.strip()
+        if not stripped or stripped.startswith("#") or "run_daily_automation.py" not in stripped:
+            continue
+        parts = stripped.split()
+        if len(parts) < 6:
+            continue
+        minute, hour_field = parts[0], parts[1]
+        if not minute.isdigit():
+            continue
+        try:
+            minute_value = int(minute)
+        except ValueError:
+            continue
+        if not 0 <= minute_value <= 59:
+            continue
+        for hour in hour_field.split(","):
+            if not hour.isdigit():
+                continue
+            hour_value = (int(hour) + 8) % 24
+            times.add(f"{hour_value:02d}:{minute_value:02d}")
+    return sorted(times)
+
+
 def automation_schedule_status() -> dict:
     if os.name != "posix":
         return {
@@ -147,6 +174,7 @@ def automation_schedule_status() -> dict:
             "note": "当前 Web 进程不在 Linux/systemd 环境，未检测 Ubuntu 自动任务。",
         }
     cron_configured = False
+    cron_beijing_times: list[str] = []
     try:
         proc = subprocess.run(
             ["crontab", "-l"],
@@ -157,9 +185,12 @@ def automation_schedule_status() -> dict:
             timeout=3,
         )
         cron_text = proc.stdout or ""
-        cron_configured = proc.returncode == 0 and "run_daily_automation.py" in cron_text and "InfoRadar" in cron_text
+        cron_beijing_times = automation_cron_beijing_times(cron_text)
+        cron_has_expected_times = all(time in cron_beijing_times for time in EXPECTED_AUTOMATION_BEIJING_TIMES)
+        cron_configured = proc.returncode == 0 and "run_daily_automation.py" in cron_text and "InfoRadar" in cron_text and cron_has_expected_times
     except Exception:
         cron_configured = False
+        cron_beijing_times = []
     try:
         proc = subprocess.run(
             ["systemctl", "is-enabled", "inforadar-daily.timer"],
@@ -197,6 +228,8 @@ def automation_schedule_status() -> dict:
         "enabled": enabled,
         "active": active,
         "cron_configured": cron_configured,
+        "cron_beijing_times": cron_beijing_times,
+        "expected_beijing_times": EXPECTED_AUTOMATION_BEIJING_TIMES,
         "schedule_type": "systemd" if systemd_configured else "crontab" if cron_configured else "",
         "note": note,
     }
@@ -335,6 +368,8 @@ def latest_status() -> dict:
             "schedule_active": schedule.get("active", False),
             "schedule_type": schedule.get("schedule_type", ""),
             "schedule_note": schedule.get("note", "当前只展示可验证的本地运行记录。"),
+            "schedule_beijing_times": schedule.get("cron_beijing_times", []),
+            "schedule_expected_beijing_times": schedule.get("expected_beijing_times", EXPECTED_AUTOMATION_BEIJING_TIMES),
             "daily_automation_configured": daily_status.get("configured", False),
             "daily_automation_ok": daily_status.get("ok", False),
             "daily_automation_started_at": daily_status.get("started_at", ""),
@@ -891,6 +926,14 @@ def search_record_timestamp(record: dict) -> float:
     return 0.0
 
 
+def is_generated_summary_title(title: str) -> bool:
+    value = str(title or "").strip()
+    lower = value.lower()
+    if value.startswith("【InfoRadar"):
+        return True
+    return lower.startswith("inforadar ") or lower.startswith("inforadar_") or value.startswith("InfoRadar ")
+
+
 def latest_intel_items(topic: str = "", limit: int = 50, resolve_folo_links: bool = True) -> dict:
     xlsx = latest_report_xlsx(topic)
     if not xlsx:
@@ -1126,7 +1169,7 @@ def first_value(row: dict, keys: list[str]) -> str:
 
 
 def search_index_roots() -> list[Path]:
-    roots = [ROOT / "data", ROOT / "sources", ROOT / "reports"]
+    roots = [ROOT / "data", ROOT / "sources", ROOT / "reports", FOLO_LINK_DIR]
     if RETURN_DIR.exists():
         roots.append(RETURN_DIR)
     seen = set()
@@ -1159,7 +1202,9 @@ def search_index_source_files() -> list[Path]:
                 lower_name.startswith("folo_items_real")
                 or (lower_name.startswith("folo_") and "deduped" in parts)
             )
-            is_folo_link_jsonl = suffix == ".jsonl" and "folo_article_links" in parts
+            is_folo_link_jsonl = suffix == ".jsonl" and (
+                "folo_article_links" in parts or lower_name == FOLO_LINK_JSONL.name.lower()
+            )
             is_manual_json = suffix in {".json", ".jsonl"} and ("manual" in lower_name or "inbox" in lower_name or "收集" in name)
             is_return_summary = suffix in {".md", ".txt"} and lower_name.startswith("folo_") and RETURN_DIR.exists() and RETURN_DIR in path.parents
             if is_rss_item_csv or is_folo_link_jsonl or is_manual_json or is_return_summary:
@@ -1632,7 +1677,7 @@ def search_history_records(query: str, limit: int, offset: int, mode: str = "sma
             phrase_results: list[dict] = []
             for row in phrase_rows:
                 record = record_from_db_row(row)
-                if str(record.get("title") or "").strip().startswith("【InfoRadar") and not allow_generated_summary:
+                if is_generated_summary_title(str(record.get("title") or "")) and not allow_generated_summary:
                     continue
                 search_text = " ".join([str(row["title"] or ""), str(row["body"] or ""), str(row["meta"] or "")])
                 record["score"] = index_match_score(query, {**record, "search_text": search_text}, mode)
@@ -1640,7 +1685,7 @@ def search_history_records(query: str, limit: int, offset: int, mode: str = "sma
                     phrase_results.append(record)
             if phrase_results:
                 phrase_results.sort(
-                    key=lambda item: (int(item.get("score", 0)), search_record_timestamp(item), item.get("kind", "")),
+                    key=lambda item: (search_record_timestamp(item), int(item.get("score", 0)), item.get("kind", "")),
                     reverse=True,
                 )
                 sliced = phrase_results[offset : offset + limit]
@@ -1673,14 +1718,14 @@ def search_history_records(query: str, limit: int, offset: int, mode: str = "sma
                 fts_results: list[dict] = []
                 for row in fts_rows:
                     record = record_from_db_row(row)
-                    if str(record.get("title") or "").strip().startswith("【InfoRadar") and not allow_generated_summary:
+                    if is_generated_summary_title(str(record.get("title") or "")) and not allow_generated_summary:
                         continue
                     search_text = " ".join([str(row["title"] or ""), str(row["body"] or ""), str(row["meta"] or "")])
                     record["score"] = index_match_score(query, {**record, "search_text": search_text}, mode)
                     if record["score"] > 0:
                         fts_results.append(record)
                 fts_results.sort(
-                    key=lambda item: (int(item.get("score", 0)), search_record_timestamp(item), item.get("kind", "")),
+                    key=lambda item: (search_record_timestamp(item), int(item.get("score", 0)), item.get("kind", "")),
                     reverse=True,
                 )
                 sliced = fts_results[offset : offset + limit]
@@ -1707,7 +1752,7 @@ def search_history_records(query: str, limit: int, offset: int, mode: str = "sma
             if not query_tokens.intersection(record_tokens):
                 continue
             record = record_from_db_row(row)
-            if str(record.get("title") or "").strip().startswith("【InfoRadar") and not allow_generated_summary:
+            if is_generated_summary_title(str(record.get("title") or "")) and not allow_generated_summary:
                 continue
             search_text = " ".join([str(row["title"] or ""), str(row["body"] or ""), str(row["meta"] or "")])
             record["score"] = index_match_score(query, {**record, "search_text": search_text}, mode)
@@ -1943,7 +1988,7 @@ def search_personal_radar(query: str, scope: str = "all", limit: int = 30, offse
     seen: set[str] = set()
     for item in results:
         title_text = str(item.get("title") or "").strip()
-        if title_text.startswith("【InfoRadar") and "inforadar" not in normalized.lower():
+        if is_generated_summary_title(title_text) and "inforadar" not in normalized.lower():
             continue
         payload = item.get("payload") if isinstance(item.get("payload"), dict) else {}
         key = "||".join(
@@ -1960,7 +2005,7 @@ def search_personal_radar(query: str, scope: str = "all", limit: int = 30, offse
             continue
         seen.add(key)
         unique.append(item)
-    unique.sort(key=lambda item: (int(item.get("score", 0)), search_record_timestamp(item), item.get("kind", "")), reverse=True)
+    unique.sort(key=lambda item: (search_record_timestamp(item), int(item.get("score", 0)), item.get("kind", "")), reverse=True)
     clipped = unique[:safe_limit] if history_total is not None else unique[safe_offset : safe_offset + safe_limit]
     total = history_total if history_total is not None else len(unique)
     response = {
