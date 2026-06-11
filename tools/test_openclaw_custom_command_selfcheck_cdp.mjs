@@ -187,10 +187,13 @@ try {
       return text.includes("[RESULT]") ? text : null;
     }, 90000);
     const options = [...document.querySelectorAll("#openclawTarget option")].map((item) => item.value);
+    const registry = await fetch("/api/openclaw/channels", { credentials: "same-origin" }).then((res) => res.json());
+    const serverHasTarget = Boolean((registry.channels || []).find((item) => item.target === targetName));
     return {
-      ok: Boolean(log?.includes("[RESULT] PASS") && options.includes(targetName)),
+      ok: Boolean(log?.includes("[RESULT] PASS") && options.includes(targetName) && serverHasTarget),
       targetName,
       options,
+      serverHasTarget,
       log
     };
   }})(${JSON.stringify(commandName)})`;
@@ -201,8 +204,24 @@ try {
     returnByValue: true
   });
   const value = result.result.value;
-  console.log(JSON.stringify(value, null, 2));
-  if (!value?.ok) process.exitCode = 1;
+  if (!value?.ok) {
+    console.log(JSON.stringify(value, null, 2));
+    process.exitCode = 1;
+  } else {
+    await send("Page.reload", { ignoreCache: true });
+    await sleep(3500);
+    const reloadCheck = await send("Runtime.evaluate", {
+      expression: `(${function (targetName) {
+        const values = [...document.querySelectorAll("#openclawTarget option")].map((item) => item.value);
+        return { ok: values.includes(targetName), values };
+      }})(${JSON.stringify(value.targetName)})`,
+      returnByValue: true
+    });
+    const afterReload = reloadCheck.result.value;
+    const finalValue = { ...value, afterReload: afterReload.values || [], ok: Boolean(value.ok && afterReload.ok) };
+    console.log(JSON.stringify(finalValue, null, 2));
+    if (!finalValue.ok) process.exitCode = 1;
+  }
 } finally {
   ws.close();
   edge.kill();

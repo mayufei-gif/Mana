@@ -12,6 +12,7 @@ const OPENCLAW_COMMANDS_KEY = "mana_openclaw_quick_commands_v1";
 const OPENCLAW_TARGETS_KEY = "mana_openclaw_custom_targets_v1";
 const OPENCLAW_SELF_CHECK_LOG_KEY = "mana_openclaw_selfcheck_log_v1";
 const OPENCLAW_BASE_TARGETS = ["codexapp", "codexapp1", "codexapp2", "codexapp3"];
+const OPENCLAW_BASE_THREAD_TARGET = "codexapp1";
 const WEB_TAB_NONCE_KEY = "inforadar_web_tab_nonce_v1";
 const LEGACY_WEB_TOKEN_KEY = "inforadar_web_token";
 const FOLO_SOURCE_TIMELINE_KEY = "folo_hive_source_timeline_v1";
@@ -160,6 +161,8 @@ const state = {
   resourceArchivePlan: null,
   openclawCommands: loadOpenClawCommands(),
   openclawTargets: loadOpenClawTargets(),
+  openclawTargetsLoaded: false,
+  openclawTargetsLoading: false,
   openclawSelfCheckLogs: loadOpenClawSelfCheckLogs(),
   codex: null,
   codexLogs: [],
@@ -2564,7 +2567,71 @@ function openClawTargetRows() {
   return rows;
 }
 
-function upsertOpenClawTarget(target, purpose = "", label = "") {
+function openClawCommandFromChannel(item) {
+  const target = normalizeOpenClawTarget(item.target || item.name);
+  return {
+    id: item.id || `server-${target}`,
+    name: item.name || item.label || target,
+    target,
+    label: item.label || item.name || target,
+    purpose: item.purpose || "",
+    prompt: item.prompt || "",
+    policy: item.policy || "hold",
+    session: item.session || "codex",
+    base_target: item.base_target || OPENCLAW_BASE_THREAD_TARGET,
+    fromServer: true,
+  };
+}
+
+async function refreshOpenClawTargets({ rerender = false } = {}) {
+  if (state.openclawTargetsLoading) return;
+  state.openclawTargetsLoading = true;
+  try {
+    const data = await api("/api/openclaw/channels");
+    const channels = Array.isArray(data?.channels) ? data.channels : [];
+    state.openclawTargets = channels.map(openClawCommandFromChannel);
+    saveOpenClawTargets(state.openclawTargets);
+    const serverCommands = state.openclawTargets.filter((item) => item.prompt);
+    const serverTargets = new Set(serverCommands.map((item) => item.target));
+    state.openclawCommands = [
+      ...serverCommands,
+      ...state.openclawCommands.filter((item) => !serverTargets.has(normalizeOpenClawTarget(item.target || item.name))),
+    ].slice(0, 32);
+    state.openclawTargetsLoaded = true;
+    if (rerender) renderOpenClawCommandCenter();
+  } catch (err) {
+    appendOpenClawSelfCheckLog(`[RED] 服务端通道同步 :: ${err.message}`);
+    state.openclawTargetsLoaded = true;
+  } finally {
+    state.openclawTargetsLoading = false;
+  }
+}
+
+async function saveOpenClawTargetToServer(item) {
+  const target = normalizeOpenClawTarget(item.target || item.name);
+  if (OPENCLAW_BASE_TARGETS.includes(target)) return { ...item, target, builtIn: true };
+  const payload = {
+    target,
+    name: item.name || item.label || target,
+    label: item.label || item.name || target,
+    purpose: item.purpose || "",
+    prompt: item.prompt || "",
+    policy: item.policy || "hold",
+    session: item.session || "codex",
+    base_target: item.base_target || OPENCLAW_BASE_THREAD_TARGET,
+    enabled: item.enabled !== false,
+  };
+  const data = await api("/api/openclaw/channels", {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
+  const channel = openClawCommandFromChannel(data?.channel || payload);
+  state.openclawTargets = [channel, ...(state.openclawTargets || []).filter((row) => normalizeOpenClawTarget(row.target || row.name) !== target)].slice(0, 32);
+  saveOpenClawTargets(state.openclawTargets);
+  return channel;
+}
+
+function upsertOpenClawTarget(target, purpose = "", label = "", extra = {}) {
   const normalized = normalizeOpenClawTarget(target);
   if (!openClawTargetValid(normalized)) {
     throw new Error("新指令通道只支持 2-32 位英文、数字、下划线或短横线，且必须以英文字母开头");
@@ -2574,7 +2641,12 @@ function upsertOpenClawTarget(target, purpose = "", label = "") {
   const item = {
     target: normalized,
     label: label || normalized,
+    name: extra.name || label || normalized,
     purpose: String(purpose || "").trim(),
+    prompt: extra.prompt || "",
+    policy: extra.policy || "hold",
+    session: extra.session || "codex",
+    base_target: extra.base_target || OPENCLAW_BASE_THREAD_TARGET,
     created_at: new Date().toISOString(),
     last_check: null,
   };
@@ -2602,6 +2674,7 @@ function openClawDraftFromForm() {
     id: `cmd-${Date.now().toString(36)}-${Math.random().toString(16).slice(2, 7)}`,
     name: ($("#openclawCommandName")?.value || "未命名指令").trim() || "未命名指令",
     target: customTarget || selectedTarget || "codexapp1",
+    base_target: customTarget ? selectedTarget || OPENCLAW_BASE_THREAD_TARGET : selectedTarget || OPENCLAW_BASE_THREAD_TARGET,
     policy: $("#openclawPolicy")?.value || "hold",
     session: $("#openclawSession")?.value || "codex",
     prompt: ($("#openclawPrompt")?.value || "").trim(),
@@ -2622,6 +2695,7 @@ function openClawCodexInstruction(item) {
     "来自 Mana Hub 微信命令中心的任务。",
     `快捷指令：${item.name || "未命名指令"}`,
     `指令通道：/${item.target || "codexapp1"}`,
+    `底层连接：/${item.base_target || item.target || "codexapp1"}`,
     `功能说明：${item.purpose || "未填写"}`,
     `微信命令：${slash}`,
     `调度策略：${openClawPolicyLabel(item.policy)}；目标：/${item.target || "codexapp1"}`,
@@ -2693,11 +2767,13 @@ async function openClawSelfCheck(item, options = {}) {
 
   if (ok) {
     try {
-      upsertOpenClawTarget(target, draft.purpose, target);
+      const item = upsertOpenClawTarget(target, draft.purpose, target, draft);
+      const saved = await saveOpenClawTargetToServer(item);
       renderOpenClawTargets(target);
+      add(true, "服务端通道注册", `已保存 /${saved.target} -> /${saved.base_target || OPENCLAW_BASE_THREAD_TARGET}`);
       add(true, "微信会话下拉框", `已登记 /${target}`);
     } catch (err) {
-      add(false, "微信会话下拉框", err.message);
+      add(false, "服务端通道注册", err.message);
     }
   }
 
@@ -2713,6 +2789,9 @@ function openClawCommandById(id) {
 function renderOpenClawCommandCenter() {
   const list = $("#openclawCommandList");
   if (!list) return;
+  if (!state.openclawTargetsLoaded && !state.openclawTargetsLoading) {
+    refreshOpenClawTargets({ rerender: true });
+  }
   const rows = state.openclawCommands || [];
   renderOpenClawTargets();
   $("#openclawSavedCount").textContent = String(rows.length);
@@ -2727,6 +2806,7 @@ function renderOpenClawCommandCenter() {
                 <div class="item-title">${escapeHtml(item.name || "未命名指令")}</div>
                 <div class="item-meta">
                   /${escapeHtml(item.target || "codexapp1")} · ${escapeHtml(openClawPolicyLabel(item.policy))} · ${escapeHtml(openClawSessionLabel(item.session))}${item.purpose ? ` · ${escapeHtml(item.purpose)}` : ""}
+                  ${item.base_target ? ` · 连接 /${escapeHtml(item.base_target)}` : ""}
                 </div>
                 <code>${escapeHtml(slash)}</code>
               </div>

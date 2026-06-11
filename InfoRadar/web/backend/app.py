@@ -84,7 +84,9 @@ CODEX_WEB_EXEC_TIMEOUT = int(os.environ.get("CODEX_WEB_EXEC_TIMEOUT", "600"))
 CODEX_WEB_JOBS: dict[str, dict] = {}
 CODEX_WEB_LOCK = threading.Lock()
 AGENTHUB_LOCK = threading.RLock()
+OPENCLAW_CHANNELS_LOCK = threading.Lock()
 RUNTIME_ENV_FILE = Path(os.environ.get("INFORADAR_WEB_ENV_FILE", "/home/mana/inforadar-runtime/inforadar-web.env"))
+OPENCLAW_CHANNELS_PATH = Path(os.environ.get("OPENCLAW_CHANNELS_PATH", str(ROOT / "data" / "openclaw" / "command_channels.json")))
 COURSEMIND_PREFIX = "/coursemind"
 COURSEMIND_FRONTEND_URL = os.environ.get("COURSEMIND_FRONTEND_URL", "http://100.78.3.45:8788").rstrip("/")
 COURSEMIND_BACKEND_URL = os.environ.get("COURSEMIND_BACKEND_URL", "http://100.78.3.45:8766").rstrip("/")
@@ -2104,6 +2106,126 @@ def require_agenthub_queue_access(request: Request) -> None:
     raise HTTPException(status_code=401, detail="AgentHub 队列口令错误")
 
 
+def has_agenthub_queue_token(request: Request) -> bool:
+    token = agenthub_queue_token()
+    if not token:
+        return False
+    submitted = (
+        request.headers.get("x-agenthub-token", "")
+        or request.headers.get("x-inforadar-token", "")
+        or request.query_params.get("token", "")
+        or request.query_params.get("access_token", "")
+    ).strip()
+    auth = request.headers.get("authorization", "").strip()
+    if auth.lower().startswith("bearer "):
+        submitted = auth[7:].strip()
+    return bool(submitted and hmac.compare_digest(submitted, token))
+
+
+def openclaw_channel_now() -> str:
+    return datetime.now(timezone.utc).isoformat(timespec="seconds")
+
+
+def normalize_openclaw_channel_target(value: object) -> str:
+    target = re.sub(r"\s+", "-", str(value or "").strip().replace("/", "")).lower()
+    if not re.fullmatch(r"[a-z][a-z0-9_-]{1,31}", target):
+        raise HTTPException(status_code=400, detail="指令通道只支持 2-32 位英文、数字、下划线或短横线，且必须以英文字母开头")
+    if target in {"codexapp", "codexapp1", "codexapp2", "codexapp3"}:
+        raise HTTPException(status_code=400, detail="内置 codexapp 通道不允许覆盖")
+    return target
+
+
+def normalize_openclaw_base_target(value: object) -> str:
+    target = str(value or "codexapp1").strip().replace("/", "").lower()
+    if target not in {"codexapp", "codexapp1", "codexapp2", "codexapp3"}:
+        return "codexapp1"
+    return target
+
+
+def openclaw_thread_key(base_target: str) -> str:
+    return {
+        "codexapp": "default",
+        "codexapp1": "app1",
+        "codexapp2": "app2",
+        "codexapp3": "app3",
+    }.get(base_target, "app1")
+
+
+def clean_openclaw_channel_text(value: object, max_length: int = 1200) -> str:
+    return str(value or "").replace("\x00", "").strip()[:max_length]
+
+
+def normalize_openclaw_channel(payload: dict, existing: dict | None = None) -> dict:
+    target = normalize_openclaw_channel_target(payload.get("target") or payload.get("name"))
+    base_target = normalize_openclaw_base_target(payload.get("base_target") or payload.get("baseTarget") or payload.get("backing_target") or payload.get("backingTarget"))
+    now = openclaw_channel_now()
+    previous = existing or {}
+    item = {
+        "id": previous.get("id") or f"openclaw-channel-{target}",
+        "target": target,
+        "label": clean_openclaw_channel_text(payload.get("label") or payload.get("name") or target, 80) or target,
+        "name": clean_openclaw_channel_text(payload.get("name") or payload.get("label") or target, 80) or target,
+        "purpose": clean_openclaw_channel_text(payload.get("purpose"), 400),
+        "prompt": clean_openclaw_channel_text(payload.get("prompt"), 1600),
+        "policy": clean_openclaw_channel_text(payload.get("policy") or "hold", 20),
+        "session": clean_openclaw_channel_text(payload.get("session") or "codex", 40),
+        "base_target": base_target,
+        "thread_key": openclaw_thread_key(base_target),
+        "enabled": bool(payload.get("enabled", True)),
+        "created_at": previous.get("created_at") or now,
+        "updated_at": now,
+    }
+    if item["policy"] not in {"hold", "queue", "now"}:
+        item["policy"] = "hold"
+    return item
+
+
+def read_openclaw_channels() -> list[dict]:
+    if not OPENCLAW_CHANNELS_PATH.exists():
+        return []
+    try:
+        data = json.loads(OPENCLAW_CHANNELS_PATH.read_text(encoding="utf-8"))
+    except Exception:
+        return []
+    rows = data.get("channels") if isinstance(data, dict) else data
+    if not isinstance(rows, list):
+        return []
+    return [item for item in rows if isinstance(item, dict)]
+
+
+def write_openclaw_channels(rows: list[dict]) -> None:
+    OPENCLAW_CHANNELS_PATH.parent.mkdir(parents=True, exist_ok=True)
+    payload = {
+        "version": "1.0",
+        "updated_at": openclaw_channel_now(),
+        "channels": sorted(rows, key=lambda item: str(item.get("updated_at") or ""), reverse=True),
+    }
+    tmp = OPENCLAW_CHANNELS_PATH.with_name(f".{OPENCLAW_CHANNELS_PATH.name}.{uuid.uuid4().hex}.tmp")
+    tmp.write_text(json.dumps(payload, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+    tmp.replace(OPENCLAW_CHANNELS_PATH)
+
+
+def upsert_openclaw_channel(payload: dict) -> dict:
+    with OPENCLAW_CHANNELS_LOCK:
+        rows = read_openclaw_channels()
+        target = normalize_openclaw_channel_target(payload.get("target") or payload.get("name"))
+        remaining = []
+        existing = None
+        for item in rows:
+            if str(item.get("target") or "") == target:
+                existing = item
+            else:
+                remaining.append(item)
+        item = normalize_openclaw_channel({**payload, "target": target}, existing=existing)
+        write_openclaw_channels([item, *remaining][:80])
+        return item
+
+
+def openclaw_channels_payload() -> dict:
+    channels = read_openclaw_channels()
+    return {"ok": True, "path": str(OPENCLAW_CHANNELS_PATH), "channels": channels}
+
+
 def read_agenthub_json(root: Path, relative_path: str) -> dict:
     path = root / relative_path
     if not path.exists():
@@ -2235,6 +2357,161 @@ def agenthub_read_session_messages(root: Path, session_id: str, limit: int = 80)
         if str(item.get("session_id", "")) == session_id:
             rows.append(item)
     return rows[-max(1, min(limit, 300)) :]
+
+
+def agenthub_read_all_session_messages(root: Path) -> list[dict]:
+    path = root / "logs" / "SESSION_MESSAGES.ndjson"
+    if not path.exists():
+        return []
+    rows = []
+    for line in path.read_text(encoding="utf-8", errors="replace").splitlines():
+        line = line.strip()
+        if not line:
+            continue
+        try:
+            item = json.loads(line)
+        except json.JSONDecodeError:
+            continue
+        if isinstance(item, dict):
+            rows.append(item)
+    return rows
+
+
+def write_agenthub_session_messages(root: Path, rows: list[dict]) -> None:
+    path = root / "logs" / "SESSION_MESSAGES.ndjson"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    tmp = path.with_name(f".{path.name}.{uuid.uuid4().hex}.tmp")
+    tmp.write_text("".join(json.dumps(row, ensure_ascii=False, separators=(",", ":")) + "\n" for row in rows), encoding="utf-8")
+    tmp.replace(path)
+
+
+def agenthub_update_session_message(root: Path, message_id: str, patch: dict) -> dict:
+    target = str(message_id or "").strip()
+    if not target:
+        raise HTTPException(status_code=400, detail="message_id 不能为空")
+    allowed = {"status", "delivery", "bridge_status", "bridge_id", "handoff_path", "thread_ref", "error", "note", "updated_at"}
+    clean_patch = {key: value for key, value in patch.items() if key in allowed and value is not None}
+    clean_patch["updated_at"] = agenthub_now()
+    with AGENTHUB_LOCK:
+        rows = agenthub_read_all_session_messages(root)
+        for index, row in enumerate(rows):
+            if str(row.get("message_id") or "") == target:
+                updated = dict(row)
+                updated.update(clean_patch)
+                rows[index] = updated
+                write_agenthub_session_messages(root, rows)
+                status_value = clean_patch.get("bridge_status") or clean_patch.get("status")
+                if updated.get("session_id") and status_value:
+                    update_agenthub_session(
+                        root,
+                        str(updated.get("session_id")),
+                        {
+                            "status": str(status_value),
+                            "last_message_summary": short_title(updated.get("content") or ""),
+                            "last_heartbeat": clean_patch["updated_at"],
+                            "updated_at": clean_patch["updated_at"],
+                        },
+                    )
+                agenthub_record_event(
+                    root,
+                    "session_message_status_updated",
+                    "Bridge updated AgentHub session message status",
+                    agent_id=updated.get("agent_id"),
+                    session_id=updated.get("session_id"),
+                    task_id=updated.get("task_id"),
+                    message_id=target,
+                )
+                return updated
+    raise HTTPException(status_code=404, detail=f"未找到 session message：{target}")
+
+
+def agenthub_pending_bridge_messages(root: Path, session_id: str = "", limit: int = 50) -> list[dict]:
+    target_session = str(session_id or "").strip()
+    rows = []
+    for row in agenthub_read_all_session_messages(root):
+        if target_session and str(row.get("session_id") or "") != target_session:
+            continue
+        if str(row.get("role") or "") != "supervisor":
+            continue
+        if str(row.get("status") or "") != "queued":
+            continue
+        if str(row.get("delivery") or "") != "bridge-pending":
+            continue
+        rows.append(row)
+    return rows[-max(1, min(limit, 200)) :]
+
+
+def agenthub_append_session_message(
+    root: Path,
+    session_id: str,
+    content: str,
+    *,
+    role: str = "codex",
+    source: str = "windows-codex-bridge",
+    task_id: str | None = None,
+    in_reply_to: str | None = None,
+    status: str = "received",
+    delivery: str = "bridge-reply",
+) -> dict:
+    text = str(content or "").strip()
+    if not text:
+        raise HTTPException(status_code=400, detail="content 不能为空")
+    with AGENTHUB_LOCK:
+        session = agenthub_find_session(root, session_id)
+        now = agenthub_now()
+        row = {
+            "message_id": f"msg-{datetime.now(timezone.utc).strftime('%Y%m%d%H%M%S')}-{uuid.uuid4().hex[:8]}",
+            "session_id": session.get("session_id"),
+            "agent_id": session.get("agent_id"),
+            "role": role,
+            "content": text,
+            "source": source,
+            "task_id": task_id,
+            "in_reply_to": in_reply_to,
+            "status": status,
+            "delivery": delivery,
+            "created_at": now,
+        }
+        append_agenthub_ndjson(root, "logs/SESSION_MESSAGES.ndjson", row)
+        update_agenthub_session(
+            root,
+            session_id,
+            {
+                "status": "idle" if role == "codex" else status,
+                "current_task_id": None if role == "codex" else task_id or session.get("current_task_id"),
+                "last_message_summary": short_title(text),
+                "last_heartbeat": now,
+                "updated_at": now,
+            },
+        )
+        if in_reply_to:
+            try:
+                agenthub_update_session_message(root, in_reply_to, {"status": "replied", "delivery": "bridge-replied"})
+            except HTTPException:
+                pass
+            if role == "codex":
+                update_agenthub_session(
+                    root,
+                    session_id,
+                    {
+                        "status": "idle",
+                        "current_task_id": None,
+                        "last_message_summary": short_title(text),
+                        "last_heartbeat": now,
+                        "updated_at": now,
+                    },
+                )
+        agenthub_record_event(
+            root,
+            "session_message_appended",
+            "Bridge appended AgentHub session message",
+            source=source,
+            agent_id=session.get("agent_id"),
+            session_id=session_id,
+            task_id=task_id,
+            message_id=row["message_id"],
+        )
+    return row
 
 
 def update_agenthub_session(root: Path, session_id: str, patch: dict) -> dict:
@@ -3887,6 +4164,58 @@ async def post_agenthub_session_message(session_id: str, request: Request) -> di
     )
 
 
+@app.get("/api/agenthub/bridge/pending")
+def get_agenthub_bridge_pending(
+    request: Request,
+    session_id: str = Query(default=""),
+    limit: int = Query(default=50, ge=1, le=200),
+) -> dict:
+    require_agenthub_queue_access(request)
+    root = agenthub_required_root()
+    if session_id:
+        agenthub_find_session(root, session_id)
+    return {"ok": True, "messages": agenthub_pending_bridge_messages(root, session_id=session_id, limit=limit)}
+
+
+@app.post("/api/agenthub/bridge/messages/{message_id}/status")
+async def post_agenthub_bridge_message_status(message_id: str, request: Request) -> dict:
+    require_agenthub_queue_access(request)
+    try:
+        payload = await request.json()
+    except Exception as exc:
+        raise HTTPException(status_code=400, detail="请求格式错误") from exc
+    if not isinstance(payload, dict):
+        raise HTTPException(status_code=400, detail="请求格式错误")
+    root = agenthub_required_root()
+    updated = agenthub_update_session_message(root, message_id, payload)
+    return {"ok": True, "message": updated}
+
+
+@app.post("/api/agenthub/bridge/reply")
+async def post_agenthub_bridge_reply(request: Request) -> dict:
+    require_agenthub_queue_access(request)
+    try:
+        payload = await request.json()
+    except Exception as exc:
+        raise HTTPException(status_code=400, detail="请求格式错误") from exc
+    if not isinstance(payload, dict):
+        raise HTTPException(status_code=400, detail="请求格式错误")
+    session_id = str(payload.get("session_id") or "").strip()
+    root = agenthub_required_root()
+    message = agenthub_append_session_message(
+        root,
+        session_id,
+        str(payload.get("content") or payload.get("message") or ""),
+        role=str(payload.get("role") or "codex"),
+        source=str(payload.get("source") or "windows-codex-bridge"),
+        task_id=str(payload.get("task_id") or "") or None,
+        in_reply_to=str(payload.get("in_reply_to") or payload.get("inReplyTo") or "") or None,
+        status=str(payload.get("status") or "received"),
+        delivery=str(payload.get("delivery") or "bridge-reply"),
+    )
+    return {"ok": True, "message": message}
+
+
 @app.get("/api/agenthub/tasks")
 def get_agenthub_tasks(request: Request) -> dict:
     require_agenthub_queue_access(request)
@@ -3974,6 +4303,32 @@ def add_cli_arg(args: list[str], flag: str, value: object | None) -> None:
     text = str(value).strip()
     if text:
         args.extend([flag, text])
+
+
+@app.get("/api/openclaw/channels")
+async def get_openclaw_channels(request: Request) -> dict:
+    if not has_access(request) and not has_agenthub_queue_token(request):
+        raise HTTPException(status_code=401, detail="未授权")
+    return openclaw_channels_payload()
+
+
+@app.get("/api/openclaw/channels/public")
+async def get_openclaw_channels_public() -> dict:
+    payload = openclaw_channels_payload()
+    payload["channels"] = [item for item in payload["channels"] if item.get("enabled", True)]
+    return payload
+
+
+@app.post("/api/openclaw/channels", dependencies=[Depends(require_access)])
+async def post_openclaw_channel(request: Request) -> dict:
+    try:
+        payload = await request.json()
+    except Exception as exc:
+        raise HTTPException(status_code=400, detail="请求格式错误") from exc
+    if not isinstance(payload, dict):
+        raise HTTPException(status_code=400, detail="请求格式错误")
+    item = upsert_openclaw_channel(payload)
+    return {"ok": True, "channel": item, "channels": read_openclaw_channels()}
 
 
 @app.post("/api/agenthub/commands/enqueue")
