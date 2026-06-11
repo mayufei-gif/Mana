@@ -860,15 +860,6 @@ function renderAgentDetail(agent) {
   `;
 }
 
-function selectAgent(agentId, scroll = true) {
-  state.selectedAgentId = agentId || "";
-  const agent = (state.agenthub?.agents || []).find((item) => item.agent_id === state.selectedAgentId);
-  renderAgentHub(state.agenthub || { projects: [], tasks: [], agents: [] });
-  if (scroll && agent) {
-    $("#agentDetailPanel")?.scrollIntoView({ behavior: "smooth", block: "start" });
-  }
-}
-
 function selectAgentHubSession(sessionId, scroll = true) {
   state.selectedAgentHubSessionId = sessionId || "";
   renderAgentHubSessions(state.agenthub || {});
@@ -988,9 +979,6 @@ function renderAgentHub(data) {
   const projects = data.projects || [];
   const tasks = (data.tasks || []).slice(0, 10);
   const agents = data.agents || [];
-  if (state.selectedAgentId && !agents.some((agent) => agent.agent_id === state.selectedAgentId)) {
-    state.selectedAgentId = "";
-  }
   $("#agentProjectCount").textContent = String(projects.length);
   $("#agentTaskCount").textContent = String(data.tasks?.length || 0);
   $("#agentRoleCount").textContent = String(agents.length);
@@ -1025,35 +1013,7 @@ function renderAgentHub(data) {
         .join("")
     : `<div class="item"><div class="item-meta">暂无任务</div></div>`;
 
-  $("#agentStatus").innerHTML = agents.length
-    ? agents
-        .map(
-          (agent) => `
-            <div class="item agent-status-card ${escapeHtml(realtimeClass(agent))} ${agent.agent_id === state.selectedAgentId ? "selected" : ""}" data-agent-id="${escapeHtml(agent.agent_id)}" role="button" tabindex="0">
-              <div class="item-title">
-                ${escapeHtml(agent.agent_id)}
-                <span class="realtime-pill ${escapeHtml(realtimeClass(agent))}">${escapeHtml(realtimeText(agent))}</span>
-              </div>
-              <div class="item-meta">
-                登记状态：${escapeHtml(statusText(agent.declared_status || agent.status))} · 角色：${escapeHtml(agent.role)}
-              </div>
-              <div class="item-meta">
-                当前任务：${escapeHtml(agent.current_task_id || "无")} · 下一步：${escapeHtml(agent.next_action || "等待")}
-              </div>
-              <div class="item-meta">
-                Codex会话：${escapeHtml(agent.codex_thread_title || "未同步")} · ${escapeHtml(codexThreadText(agent.codex_thread || {}))}
-              </div>
-              <div class="item-meta">
-                最后心跳：${escapeHtml(agent.heartbeat_at || "无")} · 来源：${escapeHtml(agent.heartbeat_source || "未登记")}
-              </div>
-              <div class="agent-card-action">点开查看 Codex App 真实会话摘要</div>
-            </div>
-          `
-        )
-        .join("")
-    : `<div class="item"><div class="item-meta">暂无角色状态</div></div>`;
   renderAgentHubSessions(data);
-  renderAgentDetail(agents.find((agent) => agent.agent_id === state.selectedAgentId));
 }
 
 function renderFiles(target, files, limit = 20) {
@@ -2586,7 +2546,8 @@ async function loadAgentHub() {
     renderAgentHub(data);
   } else {
     $("#taskBoard").innerHTML = `<div class="item"><div class="item-meta">${escapeHtml(data.error || "AgentHub 未连接")}</div></div>`;
-    $("#agentStatus").innerHTML = `<div class="item"><div class="item-meta">等待 AgentHub 初始化</div></div>`;
+    $("#agentSessionWall").innerHTML = `<div class="item"><div class="item-meta">等待 AgentHub 初始化</div></div>`;
+    $("#agentSessionDetail").innerHTML = `<div class="item"><div class="item-meta">等待会话注册表</div></div>`;
   }
 }
 
@@ -3299,11 +3260,6 @@ function bindProjectShell() {
     $("#locatorPanel")?.classList.add("hidden");
   });
   document.addEventListener("click", (event) => {
-    const card = event.target.closest(".agent-status-card[data-agent-id]");
-    if (!card) return;
-    selectAgent(card.dataset.agentId || "", true);
-  });
-  document.addEventListener("click", (event) => {
     const copyButton = event.target.closest("button[data-agenthub-copy-handoff]");
     if (copyButton) {
       const messageId = copyButton.dataset.agenthubCopyHandoff || "";
@@ -3364,10 +3320,6 @@ function bindProjectShell() {
       selectAgentHubSession(sessionCard.dataset.agenthubSession || "", true);
       return;
     }
-    const card = event.target.closest(".agent-status-card[data-agent-id]");
-    if (!card) return;
-    event.preventDefault();
-    selectAgent(card.dataset.agentId || "", true);
   });
   window.addEventListener("hashchange", () => {
     const route =
