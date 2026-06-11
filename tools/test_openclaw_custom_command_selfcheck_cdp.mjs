@@ -187,10 +187,20 @@ try {
       return text.includes("[RESULT]") ? text : null;
     }, 90000);
     const options = [...document.querySelectorAll("#openclawTarget option")].map((item) => item.value);
+    const registry = await fetch("/api/openclaw/channels", { credentials: "same-origin" }).then((res) => res.json());
+    const serverHasTarget = Boolean((registry.channels || []).find((item) => item.target === targetName));
+    location.reload();
+    await sleep(2500);
+    const afterReload = await waitUntil(() => {
+      const values = [...document.querySelectorAll("#openclawTarget option")].map((item) => item.value);
+      return values.includes(targetName) ? values : null;
+    }, 30000);
     return {
-      ok: Boolean(log?.includes("[RESULT] PASS") && options.includes(targetName)),
+      ok: Boolean(log?.includes("[RESULT] PASS") && options.includes(targetName) && serverHasTarget && afterReload?.includes(targetName)),
       targetName,
       options,
+      serverHasTarget,
+      afterReload: afterReload || [],
       log
     };
   }})(${JSON.stringify(commandName)})`;

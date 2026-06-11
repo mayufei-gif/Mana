@@ -84,7 +84,9 @@ CODEX_WEB_EXEC_TIMEOUT = int(os.environ.get("CODEX_WEB_EXEC_TIMEOUT", "600"))
 CODEX_WEB_JOBS: dict[str, dict] = {}
 CODEX_WEB_LOCK = threading.Lock()
 AGENTHUB_LOCK = threading.RLock()
+OPENCLAW_CHANNELS_LOCK = threading.Lock()
 RUNTIME_ENV_FILE = Path(os.environ.get("INFORADAR_WEB_ENV_FILE", "/home/mana/inforadar-runtime/inforadar-web.env"))
+OPENCLAW_CHANNELS_PATH = Path(os.environ.get("OPENCLAW_CHANNELS_PATH", str(ROOT / "data" / "openclaw" / "command_channels.json")))
 COURSEMIND_PREFIX = "/coursemind"
 COURSEMIND_FRONTEND_URL = os.environ.get("COURSEMIND_FRONTEND_URL", "http://100.78.3.45:8788").rstrip("/")
 COURSEMIND_BACKEND_URL = os.environ.get("COURSEMIND_BACKEND_URL", "http://100.78.3.45:8766").rstrip("/")
@@ -2104,6 +2106,126 @@ def require_agenthub_queue_access(request: Request) -> None:
     raise HTTPException(status_code=401, detail="AgentHub 队列口令错误")
 
 
+def has_agenthub_queue_token(request: Request) -> bool:
+    token = agenthub_queue_token()
+    if not token:
+        return False
+    submitted = (
+        request.headers.get("x-agenthub-token", "")
+        or request.headers.get("x-inforadar-token", "")
+        or request.query_params.get("token", "")
+        or request.query_params.get("access_token", "")
+    ).strip()
+    auth = request.headers.get("authorization", "").strip()
+    if auth.lower().startswith("bearer "):
+        submitted = auth[7:].strip()
+    return bool(submitted and hmac.compare_digest(submitted, token))
+
+
+def openclaw_channel_now() -> str:
+    return datetime.now(timezone.utc).isoformat(timespec="seconds")
+
+
+def normalize_openclaw_channel_target(value: object) -> str:
+    target = re.sub(r"\s+", "-", str(value or "").strip().replace("/", "")).lower()
+    if not re.fullmatch(r"[a-z][a-z0-9_-]{1,31}", target):
+        raise HTTPException(status_code=400, detail="指令通道只支持 2-32 位英文、数字、下划线或短横线，且必须以英文字母开头")
+    if target in {"codexapp", "codexapp1", "codexapp2", "codexapp3"}:
+        raise HTTPException(status_code=400, detail="内置 codexapp 通道不允许覆盖")
+    return target
+
+
+def normalize_openclaw_base_target(value: object) -> str:
+    target = str(value or "codexapp1").strip().replace("/", "").lower()
+    if target not in {"codexapp", "codexapp1", "codexapp2", "codexapp3"}:
+        return "codexapp1"
+    return target
+
+
+def openclaw_thread_key(base_target: str) -> str:
+    return {
+        "codexapp": "default",
+        "codexapp1": "app1",
+        "codexapp2": "app2",
+        "codexapp3": "app3",
+    }.get(base_target, "app1")
+
+
+def clean_openclaw_channel_text(value: object, max_length: int = 1200) -> str:
+    return str(value or "").replace("\x00", "").strip()[:max_length]
+
+
+def normalize_openclaw_channel(payload: dict, existing: dict | None = None) -> dict:
+    target = normalize_openclaw_channel_target(payload.get("target") or payload.get("name"))
+    base_target = normalize_openclaw_base_target(payload.get("base_target") or payload.get("baseTarget") or payload.get("backing_target") or payload.get("backingTarget"))
+    now = openclaw_channel_now()
+    previous = existing or {}
+    item = {
+        "id": previous.get("id") or f"openclaw-channel-{target}",
+        "target": target,
+        "label": clean_openclaw_channel_text(payload.get("label") or payload.get("name") or target, 80) or target,
+        "name": clean_openclaw_channel_text(payload.get("name") or payload.get("label") or target, 80) or target,
+        "purpose": clean_openclaw_channel_text(payload.get("purpose"), 400),
+        "prompt": clean_openclaw_channel_text(payload.get("prompt"), 1600),
+        "policy": clean_openclaw_channel_text(payload.get("policy") or "hold", 20),
+        "session": clean_openclaw_channel_text(payload.get("session") or "codex", 40),
+        "base_target": base_target,
+        "thread_key": openclaw_thread_key(base_target),
+        "enabled": bool(payload.get("enabled", True)),
+        "created_at": previous.get("created_at") or now,
+        "updated_at": now,
+    }
+    if item["policy"] not in {"hold", "queue", "now"}:
+        item["policy"] = "hold"
+    return item
+
+
+def read_openclaw_channels() -> list[dict]:
+    if not OPENCLAW_CHANNELS_PATH.exists():
+        return []
+    try:
+        data = json.loads(OPENCLAW_CHANNELS_PATH.read_text(encoding="utf-8"))
+    except Exception:
+        return []
+    rows = data.get("channels") if isinstance(data, dict) else data
+    if not isinstance(rows, list):
+        return []
+    return [item for item in rows if isinstance(item, dict)]
+
+
+def write_openclaw_channels(rows: list[dict]) -> None:
+    OPENCLAW_CHANNELS_PATH.parent.mkdir(parents=True, exist_ok=True)
+    payload = {
+        "version": "1.0",
+        "updated_at": openclaw_channel_now(),
+        "channels": sorted(rows, key=lambda item: str(item.get("updated_at") or ""), reverse=True),
+    }
+    tmp = OPENCLAW_CHANNELS_PATH.with_name(f".{OPENCLAW_CHANNELS_PATH.name}.{uuid.uuid4().hex}.tmp")
+    tmp.write_text(json.dumps(payload, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+    tmp.replace(OPENCLAW_CHANNELS_PATH)
+
+
+def upsert_openclaw_channel(payload: dict) -> dict:
+    with OPENCLAW_CHANNELS_LOCK:
+        rows = read_openclaw_channels()
+        target = normalize_openclaw_channel_target(payload.get("target") or payload.get("name"))
+        remaining = []
+        existing = None
+        for item in rows:
+            if str(item.get("target") or "") == target:
+                existing = item
+            else:
+                remaining.append(item)
+        item = normalize_openclaw_channel({**payload, "target": target}, existing=existing)
+        write_openclaw_channels([item, *remaining][:80])
+        return item
+
+
+def openclaw_channels_payload() -> dict:
+    channels = read_openclaw_channels()
+    return {"ok": True, "path": str(OPENCLAW_CHANNELS_PATH), "channels": channels}
+
+
 def read_agenthub_json(root: Path, relative_path: str) -> dict:
     path = root / relative_path
     if not path.exists():
@@ -3974,6 +4096,32 @@ def add_cli_arg(args: list[str], flag: str, value: object | None) -> None:
     text = str(value).strip()
     if text:
         args.extend([flag, text])
+
+
+@app.get("/api/openclaw/channels")
+async def get_openclaw_channels(request: Request) -> dict:
+    if not has_access(request) and not has_agenthub_queue_token(request):
+        raise HTTPException(status_code=401, detail="未授权")
+    return openclaw_channels_payload()
+
+
+@app.get("/api/openclaw/channels/public")
+async def get_openclaw_channels_public() -> dict:
+    payload = openclaw_channels_payload()
+    payload["channels"] = [item for item in payload["channels"] if item.get("enabled", True)]
+    return payload
+
+
+@app.post("/api/openclaw/channels", dependencies=[Depends(require_access)])
+async def post_openclaw_channel(request: Request) -> dict:
+    try:
+        payload = await request.json()
+    except Exception as exc:
+        raise HTTPException(status_code=400, detail="请求格式错误") from exc
+    if not isinstance(payload, dict):
+        raise HTTPException(status_code=400, detail="请求格式错误")
+    item = upsert_openclaw_channel(payload)
+    return {"ok": True, "channel": item, "channels": read_openclaw_channels()}
 
 
 @app.post("/api/agenthub/commands/enqueue")
