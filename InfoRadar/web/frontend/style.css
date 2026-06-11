@@ -1332,21 +1332,53 @@ main {
 
 .agenthub-sidebar-top {
   display: grid;
-  grid-template-columns: auto minmax(0, 1fr) auto;
+  gap: 12px;
+}
+
+.agenthub-sidebar-actions {
+  min-width: 0;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
   align-items: center;
   gap: 10px;
 }
 
+.agenthub-sidebar-actions .status-pill {
+  justify-self: end;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.agenthub-sidebar-brand {
+  min-width: 0;
+  display: grid;
+  gap: 4px;
+  padding: 12px;
+  border: 1px solid rgba(29, 95, 80, 0.14);
+  border-radius: 8px;
+  background: linear-gradient(135deg, #ffffff 0%, #eef6f1 100%);
+}
+
 .agenthub-sidebar-top h2 {
-  margin: 2px 0 0;
-  font-size: 18px;
-  line-height: 1.2;
+  margin: 0;
+  font-size: 20px;
+  line-height: 1.15;
   letter-spacing: 0;
+}
+
+.agenthub-sidebar-brand span {
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 800;
+  line-height: 1.45;
 }
 
 .agenthub-back-button {
   min-height: 34px;
   padding: 0 10px;
+  border-radius: 8px;
 }
 
 .agenthub-sidebar-metrics {

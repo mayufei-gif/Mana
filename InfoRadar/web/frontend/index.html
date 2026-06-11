@@ -201,12 +201,15 @@
           <div class="agenthub-chat-workbench" aria-label="AgentHub chat workbench">
             <aside class="agenthub-chat-sidebar" aria-label="AgentHub sessions">
               <div class="agenthub-sidebar-top">
-                <button class="ghost agenthub-back-button" data-route="hub" type="button">返回</button>
-                <div>
+                <div class="agenthub-sidebar-actions">
+                  <button class="ghost agenthub-back-button" data-route="hub" type="button">返回</button>
+                  <span class="status-pill" id="agentHubRoot">AgentHub</span>
+                </div>
+                <div class="agenthub-sidebar-brand">
                   <p class="eyebrow">AgentHub</p>
                   <h2>Mana AI 公司总控</h2>
+                  <span>统一调度 Codex App、Codex CLI、OpenClaw 与 GPT 应用</span>
                 </div>
-                <span class="status-pill" id="agentHubRoot">AgentHub</span>
               </div>
               <div class="agenthub-sidebar-metrics" aria-label="AgentHub summary">
                 <div><strong id="agentProjectCount">0</strong><span>项目</span></div>
