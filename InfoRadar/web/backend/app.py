@@ -2237,6 +2237,161 @@ def agenthub_read_session_messages(root: Path, session_id: str, limit: int = 80)
     return rows[-max(1, min(limit, 300)) :]
 
 
+def agenthub_read_all_session_messages(root: Path) -> list[dict]:
+    path = root / "logs" / "SESSION_MESSAGES.ndjson"
+    if not path.exists():
+        return []
+    rows = []
+    for line in path.read_text(encoding="utf-8", errors="replace").splitlines():
+        line = line.strip()
+        if not line:
+            continue
+        try:
+            item = json.loads(line)
+        except json.JSONDecodeError:
+            continue
+        if isinstance(item, dict):
+            rows.append(item)
+    return rows
+
+
+def write_agenthub_session_messages(root: Path, rows: list[dict]) -> None:
+    path = root / "logs" / "SESSION_MESSAGES.ndjson"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    tmp = path.with_name(f".{path.name}.{uuid.uuid4().hex}.tmp")
+    tmp.write_text("".join(json.dumps(row, ensure_ascii=False, separators=(",", ":")) + "\n" for row in rows), encoding="utf-8")
+    tmp.replace(path)
+
+
+def agenthub_update_session_message(root: Path, message_id: str, patch: dict) -> dict:
+    target = str(message_id or "").strip()
+    if not target:
+        raise HTTPException(status_code=400, detail="message_id 不能为空")
+    allowed = {"status", "delivery", "bridge_status", "bridge_id", "handoff_path", "thread_ref", "error", "note", "updated_at"}
+    clean_patch = {key: value for key, value in patch.items() if key in allowed and value is not None}
+    clean_patch["updated_at"] = agenthub_now()
+    with AGENTHUB_LOCK:
+        rows = agenthub_read_all_session_messages(root)
+        for index, row in enumerate(rows):
+            if str(row.get("message_id") or "") == target:
+                updated = dict(row)
+                updated.update(clean_patch)
+                rows[index] = updated
+                write_agenthub_session_messages(root, rows)
+                status_value = clean_patch.get("bridge_status") or clean_patch.get("status")
+                if updated.get("session_id") and status_value:
+                    update_agenthub_session(
+                        root,
+                        str(updated.get("session_id")),
+                        {
+                            "status": str(status_value),
+                            "last_message_summary": short_title(updated.get("content") or ""),
+                            "last_heartbeat": clean_patch["updated_at"],
+                            "updated_at": clean_patch["updated_at"],
+                        },
+                    )
+                agenthub_record_event(
+                    root,
+                    "session_message_status_updated",
+                    "Bridge updated AgentHub session message status",
+                    agent_id=updated.get("agent_id"),
+                    session_id=updated.get("session_id"),
+                    task_id=updated.get("task_id"),
+                    message_id=target,
+                )
+                return updated
+    raise HTTPException(status_code=404, detail=f"未找到 session message：{target}")
+
+
+def agenthub_pending_bridge_messages(root: Path, session_id: str = "", limit: int = 50) -> list[dict]:
+    target_session = str(session_id or "").strip()
+    rows = []
+    for row in agenthub_read_all_session_messages(root):
+        if target_session and str(row.get("session_id") or "") != target_session:
+            continue
+        if str(row.get("role") or "") != "supervisor":
+            continue
+        if str(row.get("status") or "") != "queued":
+            continue
+        if str(row.get("delivery") or "") != "bridge-pending":
+            continue
+        rows.append(row)
+    return rows[-max(1, min(limit, 200)) :]
+
+
+def agenthub_append_session_message(
+    root: Path,
+    session_id: str,
+    content: str,
+    *,
+    role: str = "codex",
+    source: str = "windows-codex-bridge",
+    task_id: str | None = None,
+    in_reply_to: str | None = None,
+    status: str = "received",
+    delivery: str = "bridge-reply",
+) -> dict:
+    text = str(content or "").strip()
+    if not text:
+        raise HTTPException(status_code=400, detail="content 不能为空")
+    with AGENTHUB_LOCK:
+        session = agenthub_find_session(root, session_id)
+        now = agenthub_now()
+        row = {
+            "message_id": f"msg-{datetime.now(timezone.utc).strftime('%Y%m%d%H%M%S')}-{uuid.uuid4().hex[:8]}",
+            "session_id": session.get("session_id"),
+            "agent_id": session.get("agent_id"),
+            "role": role,
+            "content": text,
+            "source": source,
+            "task_id": task_id,
+            "in_reply_to": in_reply_to,
+            "status": status,
+            "delivery": delivery,
+            "created_at": now,
+        }
+        append_agenthub_ndjson(root, "logs/SESSION_MESSAGES.ndjson", row)
+        update_agenthub_session(
+            root,
+            session_id,
+            {
+                "status": "idle" if role == "codex" else status,
+                "current_task_id": None if role == "codex" else task_id or session.get("current_task_id"),
+                "last_message_summary": short_title(text),
+                "last_heartbeat": now,
+                "updated_at": now,
+            },
+        )
+        if in_reply_to:
+            try:
+                agenthub_update_session_message(root, in_reply_to, {"status": "replied", "delivery": "bridge-replied"})
+            except HTTPException:
+                pass
+            if role == "codex":
+                update_agenthub_session(
+                    root,
+                    session_id,
+                    {
+                        "status": "idle",
+                        "current_task_id": None,
+                        "last_message_summary": short_title(text),
+                        "last_heartbeat": now,
+                        "updated_at": now,
+                    },
+                )
+        agenthub_record_event(
+            root,
+            "session_message_appended",
+            "Bridge appended AgentHub session message",
+            source=source,
+            agent_id=session.get("agent_id"),
+            session_id=session_id,
+            task_id=task_id,
+            message_id=row["message_id"],
+        )
+    return row
+
+
 def update_agenthub_session(root: Path, session_id: str, patch: dict) -> dict:
     data = agenthub_read_sessions(root)
     items = agenthub_items(data)
@@ -3885,6 +4040,58 @@ async def post_agenthub_session_message(session_id: str, request: Request) -> di
         task_title=str(payload.get("task_title") or payload.get("title") or "") or None,
         source=str(payload.get("source") or "api"),
     )
+
+
+@app.get("/api/agenthub/bridge/pending")
+def get_agenthub_bridge_pending(
+    request: Request,
+    session_id: str = Query(default=""),
+    limit: int = Query(default=50, ge=1, le=200),
+) -> dict:
+    require_agenthub_queue_access(request)
+    root = agenthub_required_root()
+    if session_id:
+        agenthub_find_session(root, session_id)
+    return {"ok": True, "messages": agenthub_pending_bridge_messages(root, session_id=session_id, limit=limit)}
+
+
+@app.post("/api/agenthub/bridge/messages/{message_id}/status")
+async def post_agenthub_bridge_message_status(message_id: str, request: Request) -> dict:
+    require_agenthub_queue_access(request)
+    try:
+        payload = await request.json()
+    except Exception as exc:
+        raise HTTPException(status_code=400, detail="请求格式错误") from exc
+    if not isinstance(payload, dict):
+        raise HTTPException(status_code=400, detail="请求格式错误")
+    root = agenthub_required_root()
+    updated = agenthub_update_session_message(root, message_id, payload)
+    return {"ok": True, "message": updated}
+
+
+@app.post("/api/agenthub/bridge/reply")
+async def post_agenthub_bridge_reply(request: Request) -> dict:
+    require_agenthub_queue_access(request)
+    try:
+        payload = await request.json()
+    except Exception as exc:
+        raise HTTPException(status_code=400, detail="请求格式错误") from exc
+    if not isinstance(payload, dict):
+        raise HTTPException(status_code=400, detail="请求格式错误")
+    session_id = str(payload.get("session_id") or "").strip()
+    root = agenthub_required_root()
+    message = agenthub_append_session_message(
+        root,
+        session_id,
+        str(payload.get("content") or payload.get("message") or ""),
+        role=str(payload.get("role") or "codex"),
+        source=str(payload.get("source") or "windows-codex-bridge"),
+        task_id=str(payload.get("task_id") or "") or None,
+        in_reply_to=str(payload.get("in_reply_to") or payload.get("inReplyTo") or "") or None,
+        status=str(payload.get("status") or "received"),
+        delivery=str(payload.get("delivery") or "bridge-reply"),
+    )
+    return {"ok": True, "message": message}
 
 
 @app.get("/api/agenthub/tasks")
