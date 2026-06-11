@@ -1,0 +1,34 @@
+{
+  "version": "1.0",
+  "updated_at": "2026-06-11T00:00:00+08:00",
+  "items": [
+    {
+      "project_id": "agenthub",
+      "ubuntu_path": "/home/mana/NASAgentHub",
+      "windows_path": "G:\\E盘\\工作项目文件\\Git Hub克隆仓库集群\\Mana\\NASAgentHub",
+      "nas_path": "/home/mana/NASAgentHub",
+      "notes": "AgentHub 总控项目"
+    },
+    {
+      "project_id": "inforadar",
+      "ubuntu_path": "/home/mana/InfoRadar",
+      "windows_path": "G:\\E盘\\工作项目文件\\Git Hub克隆仓库集群\\Mana\\InfoRadar",
+      "nas_path": "/home/mana/InfoRadar",
+      "notes": "InfoRadar 个人信息雷达项目"
+    },
+    {
+      "project_id": "coursemind",
+      "ubuntu_path": "/home/mana/CourseMindNAS",
+      "windows_path": "G:\\E盘\\工作项目文件\\Git Hub克隆仓库集群\\Mana\\CourseMindNAS",
+      "nas_path": "/home/mana/CourseMindNAS",
+      "notes": "NAS 视频字幕、章节、重点时间轴、笔记系统"
+    },
+    {
+      "project_id": "openclaw",
+      "ubuntu_path": "/home/mana/NASAgentHub",
+      "windows_path": "G:\\E盘\\工作项目文件\\NAS\\微信直连codex",
+      "nas_path": "/home/mana/NASAgentHub",
+      "notes": "微信远程指令桥接系统"
+    }
+  ]
+}
