@@ -32,7 +32,8 @@ from xlsx_writer import write_xlsx
 ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_SOURCE_POOL = ROOT / "sources" / "source_pool_from_folo.csv"
 RAW_RSS_DIR = ROOT / "data" / "raw" / "rss_items"
-RETURN_DIR = Path(os.environ.get("INFORADAR_RETURN_DIR", r"G:\E盘\工作项目文件\NAS回传\FOLO"))
+DEFAULT_RETURN_DIR = Path(r"G:\E盘\工作项目文件\NAS回传\FOLO") if os.name == "nt" else Path("/home/mana/inforadar-return/FOLO")
+RETURN_DIR = Path(os.environ.get("INFORADAR_RETURN_DIR", str(DEFAULT_RETURN_DIR)))
 LOG_DIR = ROOT / "logs"
 STRATEGY_CSV = ROOT / "sources" / "source_pool_strategy.csv"
 STRATEGY_XLSX = ROOT / "sources" / "source_pool_strategy.xlsx"
