@@ -13,6 +13,7 @@ const OPENCLAW_TARGETS_KEY = "mana_openclaw_custom_targets_v1";
 const OPENCLAW_SELF_CHECK_LOG_KEY = "mana_openclaw_selfcheck_log_v1";
 const OPENCLAW_BASE_TARGETS = ["codexapp", "codexapp1", "codexapp2", "codexapp3"];
 const OPENCLAW_BASE_THREAD_TARGET = "codexapp1";
+const NAS_ADMIN_URL = "https://100.78.3.45:9443";
 const WEB_TAB_NONCE_KEY = "inforadar_web_tab_nonce_v1";
 const LEGACY_WEB_TOKEN_KEY = "inforadar_web_token";
 const FOLO_SOURCE_TIMELINE_KEY = "folo_hive_source_timeline_v1";
@@ -129,6 +130,7 @@ const state = {
   tabBound: true,
   agenthub: null,
   selectedAgentId: "",
+  selectedAgentHubSessionId: "",
   agentRefreshTimer: null,
   headerCollapseTimer: null,
   lastHeaderScrollY: 0,
@@ -184,6 +186,16 @@ const state = {
       active: true,
       publicHostname: "/coursemind/",
       actionText: "进入学习库",
+    },
+    {
+      id: "NasAdminConsole",
+      name: "NAS 管理台",
+      status: "在线",
+      description: "DXP-4800 管理页面，使用已验证可通的尾网地址 100.78.3.45:9443，避免跳到不可达的 192.168.1.87。",
+      accent: "amber",
+      active: true,
+      publicHostname: NAS_ADMIN_URL,
+      actionText: "打开 NAS",
     },
     {
       id: "nas-pipeline",
@@ -521,7 +533,7 @@ function setRoute(route, updateHash = true) {
 
 function renderProjects() {
   const box = $("#projectGrid");
-  const rows = state.agenthub?.projects?.length
+  let rows = state.agenthub?.projects?.length
     ? state.agenthub.projects.map((project) => ({
         id: project.project_id,
         name:
@@ -565,6 +577,21 @@ function renderProjects() {
                       : "预留位",
       }))
     : state.projects;
+  if (!rows.some((project) => project.id === "NasAdminConsole" || project.project_id === "NasAdminConsole")) {
+    rows = [
+      ...rows,
+      {
+        id: "NasAdminConsole",
+        name: "NAS 管理台",
+        status: "在线",
+        description: "DXP-4800 管理页面，使用已验证可通的尾网地址 100.78.3.45:9443，避免跳到不可达的 192.168.1.87。",
+        publicHostname: NAS_ADMIN_URL,
+        accent: "amber",
+        active: true,
+        actionText: "打开 NAS",
+      },
+    ];
+  }
   $("#projectCount").textContent = String(rows.length);
   $("#onlineCount").textContent = String(rows.filter((item) => item.active).length);
   box.innerHTML = rows
@@ -608,6 +635,9 @@ function renderProjects() {
         const url = button.dataset.url || "/coursemind/";
         window.location.assign(url);
         showToast("正在打开 CourseMind 学习库");
+      } else if (target === "NasAdminConsole") {
+        window.open(button.dataset.url || NAS_ADMIN_URL, "_blank", "noopener,noreferrer");
+        showToast("正在打开 NAS 管理台");
       } else {
         showToast("这个项目位已经预留，后续可以接入");
       }
@@ -631,6 +661,16 @@ function statusText(value) {
     planned: "规划",
     online: "在线",
     mvp: "MVP",
+    "bridge-pending": "等待 Bridge",
+    "handoff-ready": "Handoff 就绪",
+    "manual-handoff": "人工交接",
+    "manual-copied": "已复制",
+    "manual-reply": "人工回填",
+    "codex-replied": "Codex 已回填",
+    "app-server-delivered": "App Server 已投递",
+    "app-server-replied": "App Server 已回复",
+    replied: "已回复",
+    received: "已接收",
   };
   return map[value] || value || "未知";
 }
