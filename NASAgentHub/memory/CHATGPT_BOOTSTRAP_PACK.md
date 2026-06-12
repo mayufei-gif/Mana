@@ -25,8 +25,9 @@
 - 阶段 1D：OpenClaw 路由通过，目标为 `openclaw-agent` / `session-openclaw-wechat-001`。
 - 阶段 1D：Ubuntu Codex CLI 路由通过，目标为 `ubuntu-codex-cli-agent` / `session-ubuntu-agenthub-001`。
 - 阶段 1E：附件上传到 `uploads/` 已通过，历史测试确认附件可进入 session 消息。
+- 阶段 1E：`attachment_ids` 轻量附件调度已通过，GPT 只传 `attachment_id`，AgentHub 服务端展开为 `attachments`。
 
-## 当前正在做
+## 附件调度协议
 
 附件调度优先使用轻量 `attachment_ids` 协议，避免 GPT 工具调用携带完整附件对象时被平台安全检查拦截。
 
@@ -49,6 +50,6 @@
 - `coordination/TASK_BOARD.json` 写入同一附件引用。
 - `logs/SESSION_MESSAGES.ndjson` 的目标 session 写入同一 `attachment_id`。
 
-## 未完成
+## 当前下一步
 
-阶段 1F：Windows Codex App 私有窗口自动投递仍未完成。当前主管只能把任务送入 AgentHub 协议层、Task Room、Session 日志、TASK_BOARD 和 Bridge/handoff 队列，不能声明已直接控制 Windows Codex App 的真实私有聊天窗口。
+阶段 1F：Windows Codex App 私有窗口自动投递仍未完成。下一步只读梳理 Windows Codex App 本机 app-server/thread API、现有 Bridge handoff 文件和 appThreadContexts。当前主管只能把任务送入 AgentHub 协议层、Task Room、Session 日志、TASK_BOARD 和 Bridge/handoff 队列，不能声明已直接控制 Windows Codex App 的真实私有聊天窗口。
