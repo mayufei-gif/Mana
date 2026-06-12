@@ -123,7 +123,9 @@ class AgentHubDispatchContractTest(unittest.TestCase):
         send_tool = next(tool for tool in tools if tool["name"] == "send_task_room_message")
         supervisor_tool = next(tool for tool in tools if tool["name"] == "supervisor_dispatch")
         self.assertIn("attachments", send_tool["inputSchema"]["properties"])
+        self.assertIn("attachment_ids", send_tool["inputSchema"]["properties"])
         self.assertIn("attachments", supervisor_tool["inputSchema"]["properties"])
+        self.assertIn("attachment_ids", supervisor_tool["inputSchema"]["properties"])
 
     def test_supervisor_mention_creates_real_supervisor_and_routes_to_windows_api(self) -> None:
         result = backend.agenthub_dispatch_chat_message(
@@ -183,10 +185,12 @@ class AgentHubDispatchContractTest(unittest.TestCase):
         )
 
         self.assertEqual(result["attachments"][0]["filename"], "note.txt")
+        attachment_registry = read_json(self.root, "coordination/ATTACHMENTS.json")["items"]
+        self.assertTrue(any(item["attachment_id"] == attachment["attachment_id"] for item in attachment_registry))
         session_rows = read_ndjson(self.root, "logs/SESSION_MESSAGES.ndjson")
         self.assertEqual(session_rows[-1]["attachments"][0]["attachment_id"], attachment["attachment_id"])
 
-    def test_mcp_can_upload_attachment_and_supervisor_dispatch_to_ubuntu_session(self) -> None:
+    def test_mcp_can_upload_attachment_id_and_supervisor_dispatch_to_ubuntu_session(self) -> None:
         upload_response = backend.handle_mcp_rpc(
             {
                 "jsonrpc": "2.0",
@@ -220,7 +224,7 @@ class AgentHubDispatchContractTest(unittest.TestCase):
                     "arguments": {
                         "room_id": room["room_id"],
                         "message": "@主管 请把这个附件交给 @ubuntu-codex-cli，只做路由测试，不需要实际执行。",
-                        "attachments": [attachment],
+                        "attachment_ids": [attachment["attachment_id"]],
                     },
                 },
             }

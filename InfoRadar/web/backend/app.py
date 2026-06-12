@@ -6,6 +6,7 @@ import html as html_tools
 import hmac
 import ipaddress
 import json
+import mimetypes
 import os
 import re
 import secrets
@@ -93,7 +94,7 @@ COURSEMIND_BACKEND_URL = os.environ.get("COURSEMIND_BACKEND_URL", "http://100.78
 COURSEMIND_PROXY_TIMEOUT = float(os.environ.get("COURSEMIND_PROXY_TIMEOUT", "120"))
 
 app = FastAPI(title="InfoRadar Web", version="0.1.0")
-AGENTHUB_MCP_SERVER_VERSION = "0.2.0"
+AGENTHUB_MCP_SERVER_VERSION = "0.3.0"
 AGENTHUB_MCP_NO_CACHE_HEADERS = {
     "Cache-Control": "no-store, no-cache, must-revalidate, max-age=0",
     "Pragma": "no-cache",
@@ -2947,25 +2948,95 @@ def safe_agenthub_filename(filename: str) -> str:
     return cleaned[:120] or "attachment"
 
 
+def agenthub_read_attachment_registry(root: Path) -> dict:
+    return read_agenthub_json(root, "coordination/ATTACHMENTS.json")
+
+
+def agenthub_upsert_attachment(root: Path, attachment: dict) -> dict:
+    item = {key: value for key, value in attachment.items() if value not in (None, "")}
+    attachment_id = str(item.get("attachment_id") or "")
+    if not attachment_id:
+        raise HTTPException(status_code=400, detail="附件缺少 attachment_id")
+    data = agenthub_read_attachment_registry(root)
+    items = [entry for entry in agenthub_items(data) if str(entry.get("attachment_id") or "") != attachment_id]
+    data["items"] = [*items, item]
+    data["updated_at"] = agenthub_now()
+    write_agenthub_json(root, "coordination/ATTACHMENTS.json", data)
+    return item
+
+
+def agenthub_find_attachment(root: Path, attachment_id: str) -> dict:
+    target = str(attachment_id or "").strip()
+    if not target:
+        raise HTTPException(status_code=400, detail="attachment_id 不能为空")
+    for item in agenthub_items(agenthub_read_attachment_registry(root)):
+        if str(item.get("attachment_id") or "") == target:
+            return item
+
+    upload_root = root / "uploads"
+    matches = sorted(upload_root.glob(f"**/{target}-*")) if upload_root.exists() else []
+    if not matches:
+        raise HTTPException(status_code=404, detail=f"未找到附件：{target}")
+    path = matches[0]
+    stat = path.stat()
+    filename = path.name[len(target) + 1 :] if path.name.startswith(f"{target}-") else path.name
+    attachment = {
+        "attachment_id": target,
+        "filename": filename,
+        "path": str(path.relative_to(root)).replace("\\", "/"),
+        "size": stat.st_size,
+        "mime": mimetypes.guess_type(path.name)[0] or "application/octet-stream",
+        "created_at": datetime.fromtimestamp(stat.st_mtime, timezone.utc).astimezone().isoformat(timespec="seconds"),
+    }
+    return agenthub_upsert_attachment(root, attachment)
+
+
+def agenthub_resolve_attachments(root: Path, attachments: Any = None, attachment_ids: Any = None) -> list[dict]:
+    clean: list[dict] = []
+    seen: set[str] = set()
+    if isinstance(attachments, list):
+        for item in attachments:
+            if not isinstance(item, dict):
+                continue
+            attachment = dict(item)
+            attachment_id = str(attachment.get("attachment_id") or "").strip()
+            if attachment_id and attachment_id not in seen:
+                seen.add(attachment_id)
+            clean.append(attachment)
+    if isinstance(attachment_ids, list):
+        for raw_id in attachment_ids:
+            attachment_id = str(raw_id or "").strip()
+            if not attachment_id or attachment_id in seen:
+                continue
+            clean.append(agenthub_find_attachment(root, attachment_id))
+            seen.add(attachment_id)
+    return clean
+
+
 def agenthub_store_attachment(root: Path, *, filename: str, content: bytes, mime: str = "application/octet-stream") -> dict:
     data = bytes(content or b"")
     if not data:
         raise HTTPException(status_code=400, detail="附件内容不能为空")
     if len(data) > 25 * 1024 * 1024:
         raise HTTPException(status_code=413, detail="附件超过 25MB 限制")
+    now = agenthub_now()
     attachment_id = f"att-{datetime.now(timezone.utc).strftime('%Y%m%d%H%M%S')}-{uuid.uuid4().hex[:8]}"
     safe_name = safe_agenthub_filename(filename)
     upload_dir = root / "uploads" / datetime.now(timezone.utc).strftime("%Y%m%d")
     upload_dir.mkdir(parents=True, exist_ok=True)
     path = upload_dir / f"{attachment_id}-{safe_name}"
     path.write_bytes(data)
-    return {
-        "attachment_id": attachment_id,
-        "filename": safe_name,
-        "path": str(path.relative_to(root)).replace("\\", "/"),
-        "size": len(data),
-        "mime": str(mime or "application/octet-stream"),
-    }
+    return agenthub_upsert_attachment(
+        root,
+        {
+            "attachment_id": attachment_id,
+            "filename": safe_name,
+            "path": str(path.relative_to(root)).replace("\\", "/"),
+            "size": len(data),
+            "mime": str(mime or "application/octet-stream"),
+            "created_at": now,
+        },
+    )
 
 
 def agenthub_resolve_dispatch_targets(root: Path, mentions: list[str], fallback_session_id: str = "") -> list[dict]:
@@ -3014,12 +3085,13 @@ def agenthub_dispatch_chat_message(
     room_id: str | None = None,
     session_id: str | None = None,
     attachments: list[dict] | None = None,
+    attachment_ids: list[str] | None = None,
     source: str = "web-chat-workbench",
 ) -> dict:
     text = str(content or "").strip()
     if not text:
         raise HTTPException(status_code=400, detail="message 不能为空")
-    clean_attachments = [item for item in (attachments or []) if isinstance(item, dict)]
+    clean_attachments = agenthub_resolve_attachments(root, attachments, attachment_ids)
     mentions = agenthub_parse_mentions(text)
     active_room = None
     if room_id:
@@ -3251,11 +3323,20 @@ def agenthub_tool_text(payload: Any) -> dict:
     return {"content": [{"type": "text", "text": json.dumps(payload, ensure_ascii=False, indent=2)}]}
 
 
-def agenthub_mcp_attachments(args: dict) -> list[dict]:
-    attachments = args.get("attachments") if isinstance(args, dict) else []
-    if not isinstance(attachments, list):
-        return []
-    return [item for item in attachments if isinstance(item, dict)]
+def agenthub_mcp_attachments(root: Path, args: dict) -> list[dict]:
+    return agenthub_resolve_attachments(
+        root,
+        args.get("attachments") if isinstance(args.get("attachments"), list) else [],
+        args.get("attachment_ids") if isinstance(args.get("attachment_ids"), list) else [],
+    )
+
+
+def agenthub_payload_attachment_ids(payload: dict) -> list[str]:
+    for key in ("attachment_ids", "attachmentIds"):
+        value = payload.get(key)
+        if isinstance(value, list):
+            return [str(item) for item in value if str(item or "").strip()]
+    return []
 
 
 def agenthub_mcp_tools() -> list[dict]:
@@ -3273,6 +3354,7 @@ def agenthub_mcp_tools() -> list[dict]:
         "additionalProperties": True,
     }
     attachment_list_schema = {"type": "array", "items": attachment_schema}
+    attachment_ids_schema = {"type": "array", "items": string_schema}
     return [
         {
             "name": "list_agents",
@@ -3298,6 +3380,7 @@ def agenthub_mcp_tools() -> list[dict]:
                     "session_id": string_schema,
                     "message": string_schema,
                     "task_title": string_schema,
+                    "attachment_ids": attachment_ids_schema,
                     "attachments": attachment_list_schema,
                 },
                 "required": ["session_id", "message"],
@@ -3312,6 +3395,7 @@ def agenthub_mcp_tools() -> list[dict]:
                     "session_id": string_schema,
                     "task_title": string_schema,
                     "message": string_schema,
+                    "attachment_ids": attachment_ids_schema,
                     "attachments": attachment_list_schema,
                 },
                 "required": ["session_id", "task_title", "message"],
@@ -3350,7 +3434,12 @@ def agenthub_mcp_tools() -> list[dict]:
             "description": "向 Task Room 写入消息并按 @ 提及分发到 supervisor、Agent 或具体 session。",
             "inputSchema": {
                 "type": "object",
-                "properties": {"room_id": string_schema, "message": string_schema, "attachments": attachment_list_schema},
+                "properties": {
+                    "room_id": string_schema,
+                    "message": string_schema,
+                    "attachment_ids": attachment_ids_schema,
+                    "attachments": attachment_list_schema,
+                },
                 "required": ["room_id", "message"],
             },
         },
@@ -3359,7 +3448,12 @@ def agenthub_mcp_tools() -> list[dict]:
             "description": "通过真实 supervisor-agent 解析 @ 提及并分发任务。",
             "inputSchema": {
                 "type": "object",
-                "properties": {"message": string_schema, "room_id": string_schema, "attachments": attachment_list_schema},
+                "properties": {
+                    "message": string_schema,
+                    "room_id": string_schema,
+                    "attachment_ids": attachment_ids_schema,
+                    "attachments": attachment_list_schema,
+                },
                 "required": ["message"],
             },
         },
@@ -3413,7 +3507,7 @@ def agenthub_call_tool(name: str, arguments: dict | None = None) -> dict:
                 str(args.get("message") or ""),
                 task_title=str(args.get("task_title") or "") or None,
                 source="mcp",
-                attachments=agenthub_mcp_attachments(args),
+                attachments=agenthub_mcp_attachments(root, args),
             )
         )
     if name == "dispatch_task_to_session":
@@ -3424,7 +3518,7 @@ def agenthub_call_tool(name: str, arguments: dict | None = None) -> dict:
                 str(args.get("message") or ""),
                 task_title=str(args.get("task_title") or "") or None,
                 source="mcp-dispatch",
-                attachments=agenthub_mcp_attachments(args),
+                attachments=agenthub_mcp_attachments(root, args),
             )
         )
     if name == "read_session_messages":
@@ -3461,7 +3555,7 @@ def agenthub_call_tool(name: str, arguments: dict | None = None) -> dict:
                 sender_id="mcp",
                 room_id=str(args.get("room_id") or ""),
                 source="mcp-task-room",
-                attachments=agenthub_mcp_attachments(args),
+                attachments=agenthub_mcp_attachments(root, args),
             )
         )
     if name == "supervisor_dispatch":
@@ -3473,7 +3567,7 @@ def agenthub_call_tool(name: str, arguments: dict | None = None) -> dict:
                 sender_id="mcp",
                 room_id=str(args.get("room_id") or "") or None,
                 source="mcp-supervisor-dispatch",
-                attachments=agenthub_mcp_attachments(args),
+                attachments=agenthub_mcp_attachments(root, args),
             )
         )
     if name == "upload_attachment":
@@ -4881,6 +4975,7 @@ async def post_agenthub_session_message(session_id: str, request: Request) -> di
         session_id=session_id,
         room_id=str(payload.get("room_id") or payload.get("roomId") or "") or None,
         attachments=payload.get("attachments") if isinstance(payload.get("attachments"), list) else [],
+        attachment_ids=agenthub_payload_attachment_ids(payload),
         source=str(payload.get("source") or "api"),
     )
 
@@ -4939,6 +5034,7 @@ async def post_agenthub_task_room_message(room_id: str, request: Request) -> dic
         sender_id=str(payload.get("sender_id") or payload.get("senderId") or "web-user"),
         room_id=room_id,
         attachments=payload.get("attachments") if isinstance(payload.get("attachments"), list) else [],
+        attachment_ids=agenthub_payload_attachment_ids(payload),
         source=str(payload.get("source") or "task-room-web"),
     )
 
@@ -4969,6 +5065,7 @@ async def post_agenthub_supervisor_message(request: Request) -> dict:
         sender_id=str(payload.get("sender_id") or payload.get("senderId") or "web-user"),
         room_id=str(payload.get("room_id") or payload.get("roomId") or "") or None,
         attachments=payload.get("attachments") if isinstance(payload.get("attachments"), list) else [],
+        attachment_ids=agenthub_payload_attachment_ids(payload),
         source=str(payload.get("source") or "supervisor-web"),
     )
 
@@ -4988,6 +5085,7 @@ async def post_agenthub_supervisor_dispatch(request: Request) -> dict:
         sender_id=str(payload.get("sender_id") or payload.get("senderId") or "web-user"),
         room_id=str(payload.get("room_id") or payload.get("roomId") or "") or None,
         attachments=payload.get("attachments") if isinstance(payload.get("attachments"), list) else [],
+        attachment_ids=agenthub_payload_attachment_ids(payload),
         source=str(payload.get("source") or "supervisor-dispatch-web"),
     )
 
