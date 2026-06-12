@@ -2376,7 +2376,14 @@ MISSION_CONTROL_DEFAULT_SOURCES = {
     "mcp-supervisor-dispatch",
     "supervisor-web",
     "supervisor-dispatch-web",
+    "llm-supervisor-web",
 }
+AGENTHUB_DAEMON_STATE_PATH = "coordination/DAEMON_STATE.json"
+AGENTHUB_LLM_SUPERVISOR_STATE_PATH = "coordination/LLM_SUPERVISOR_STATE.json"
+AGENTHUB_OPENCLAW_HEARTBEAT_PATH = "coordination/OPENCLAW_HEARTBEAT.json"
+AGENTHUB_DAEMON_STOP = threading.Event()
+AGENTHUB_DAEMON_LOCK = threading.Lock()
+AGENTHUB_DAEMON_THREAD: threading.Thread | None = None
 AGENTHUB_MENTION_ALIASES = {
     "@主管": SUPERVISOR_AGENT_ID,
     "@supervisor": SUPERVISOR_AGENT_ID,
@@ -2933,6 +2940,320 @@ def agenthub_record_event(root: Path, event_type: str, message: str, **fields: A
     event.update({key: value for key, value in fields.items() if value is not None})
     append_agenthub_ndjson(root, "logs/EVENT_LOG.ndjson", event)
     return event
+
+
+def agenthub_daemon_enabled() -> bool:
+    value = (os.environ.get("AGENTHUB_DAEMON_ENABLED", "").strip() or runtime_env_value("AGENTHUB_DAEMON_ENABLED") or "1").lower()
+    return value not in {"0", "false", "no", "off"}
+
+
+def agenthub_daemon_interval_seconds() -> int:
+    raw = os.environ.get("AGENTHUB_DAEMON_INTERVAL_SECONDS", "").strip() or runtime_env_value("AGENTHUB_DAEMON_INTERVAL_SECONDS") or "60"
+    try:
+        return max(15, min(int(raw), 3600))
+    except ValueError:
+        return 60
+
+
+def agenthub_daemon_state(root: Path) -> dict:
+    data = read_agenthub_json(root, AGENTHUB_DAEMON_STATE_PATH)
+    if not data:
+        return {
+            "ok": True,
+            "status": "not-started",
+            "daemon_id": "agenthub-web-daemon",
+            "enabled": agenthub_daemon_enabled(),
+            "updated_at": "",
+        }
+    data["ok"] = True
+    data.setdefault("daemon_id", "agenthub-web-daemon")
+    data.setdefault("enabled", agenthub_daemon_enabled())
+    return data
+
+
+def agenthub_daemon_tick(root: Path, *, source: str = "web-daemon") -> dict:
+    agenthub_ensure_supervisor(root)
+    agenthub_ensure_mission_control_room(root)
+    tasks = agenthub_items(read_agenthub_json(root, "coordination/TASK_BOARD.json"))
+    sessions = agenthub_items(agenthub_read_sessions(root))
+    rooms = agenthub_items(agenthub_read_task_rooms(root))
+    pending = agenthub_pending_bridge_messages(root, limit=200)
+    active_tasks = [task for task in tasks if str(task.get("status") or "").lower() not in {"done", "verified", "failed", "archived"}]
+    now = agenthub_now()
+    state = {
+        "version": "1.0",
+        "ok": True,
+        "daemon_id": "agenthub-web-daemon",
+        "enabled": agenthub_daemon_enabled(),
+        "status": "running" if agenthub_daemon_enabled() else "disabled",
+        "source": source,
+        "last_tick_at": now,
+        "updated_at": now,
+        "interval_seconds": agenthub_daemon_interval_seconds(),
+        "mission_room_id": MISSION_CONTROL_ROOM_ID,
+        "counts": {
+            "sessions": len(sessions),
+            "task_rooms": len(rooms),
+            "active_tasks": len(active_tasks),
+            "bridge_pending": len(pending),
+        },
+        "actions": [
+            "ensure-supervisor-session",
+            "ensure-mission-control-room",
+            "count-bridge-pending",
+        ],
+    }
+    write_agenthub_json(root, AGENTHUB_DAEMON_STATE_PATH, state)
+    agenthub_record_event(
+        root,
+        "daemon_tick",
+        "AgentHub web daemon tick",
+        source=source,
+        bridge_pending=len(pending),
+        active_task_count=len(active_tasks),
+    )
+    return state
+
+
+def agenthub_daemon_loop() -> None:
+    while not AGENTHUB_DAEMON_STOP.is_set():
+        try:
+            root = agenthub_root()
+            if root is not None and agenthub_daemon_enabled():
+                agenthub_daemon_tick(root, source="startup-daemon")
+        except Exception:
+            pass
+        AGENTHUB_DAEMON_STOP.wait(agenthub_daemon_interval_seconds())
+
+
+def start_agenthub_daemon_thread() -> None:
+    global AGENTHUB_DAEMON_THREAD
+    if not agenthub_daemon_enabled():
+        return
+    with AGENTHUB_DAEMON_LOCK:
+        if AGENTHUB_DAEMON_THREAD and AGENTHUB_DAEMON_THREAD.is_alive():
+            return
+        AGENTHUB_DAEMON_STOP.clear()
+        AGENTHUB_DAEMON_THREAD = threading.Thread(target=agenthub_daemon_loop, name="agenthub-web-daemon", daemon=True)
+        AGENTHUB_DAEMON_THREAD.start()
+
+
+def stop_agenthub_daemon_thread() -> None:
+    AGENTHUB_DAEMON_STOP.set()
+
+
+def openai_api_key() -> str:
+    return os.environ.get("OPENAI_API_KEY", "").strip() or runtime_env_value("OPENAI_API_KEY")
+
+
+def agenthub_llm_supervisor_state(root: Path) -> dict:
+    data = read_agenthub_json(root, AGENTHUB_LLM_SUPERVISOR_STATE_PATH)
+    model = os.environ.get("AGENTHUB_LLM_SUPERVISOR_MODEL", "").strip() or runtime_env_value("AGENTHUB_LLM_SUPERVISOR_MODEL") or "gpt-4.1-mini"
+    configured = bool(openai_api_key())
+    state = {
+        "ok": True,
+        "enabled": configured,
+        "mode": "openai-responses" if configured else "rule-router-fallback",
+        "model": model,
+        "mission_room_id": MISSION_CONTROL_ROOM_ID,
+        "note": "OPENAI_API_KEY 已配置，可调用 LLM 主管。" if configured else "未配置 OPENAI_API_KEY；网页主管使用 AgentHub 规则路由，不假装模型已思考。",
+    }
+    if data:
+        state.update(data)
+        state["ok"] = True
+        state["enabled"] = configured
+        state["mode"] = "openai-responses" if configured else "rule-router-fallback"
+        state["model"] = model
+    return state
+
+
+def extract_openai_response_text(payload: dict) -> str:
+    if payload.get("output_text"):
+        return str(payload.get("output_text") or "").strip()
+    parts: list[str] = []
+    for item in payload.get("output") or []:
+        for content in item.get("content") or []:
+            text = content.get("text") or content.get("output_text")
+            if text:
+                parts.append(str(text))
+    return "\n".join(parts).strip()
+
+
+def call_agenthub_llm_supervisor(message: str, context: dict) -> dict:
+    key = openai_api_key()
+    model = os.environ.get("AGENTHUB_LLM_SUPERVISOR_MODEL", "").strip() or runtime_env_value("AGENTHUB_LLM_SUPERVISOR_MODEL") or "gpt-4.1-mini"
+    if not key:
+        return {
+            "ok": False,
+            "model_available": False,
+            "mode": "rule-router-fallback",
+            "model": model,
+            "reply": "LLM 主管未配置 OPENAI_API_KEY；本次已使用 AgentHub 规则路由。",
+        }
+    body = {
+        "model": model,
+        "input": [
+            {
+                "role": "system",
+                "content": (
+                    "你是 Mana AgentHub 的内部主管。只输出简短中文调度说明；"
+                    "不要声称已经真实投递到 Codex App 私有窗口；"
+                    "如果需要执行，请点名 @codexcli、@codexapp-api、@codexapp-gpt 或 @openclaw。"
+                ),
+            },
+            {
+                "role": "user",
+                "content": json.dumps({"message": message, "context": context}, ensure_ascii=False),
+            },
+        ],
+    }
+    request = urllib.request.Request(
+        "https://api.openai.com/v1/responses",
+        data=json.dumps(body, ensure_ascii=False).encode("utf-8"),
+        headers={"Authorization": f"Bearer {key}", "Content-Type": "application/json"},
+        method="POST",
+    )
+    try:
+        with urllib.request.urlopen(request, timeout=45) as response:
+            payload = json.loads(response.read().decode("utf-8", errors="replace"))
+    except Exception as exc:
+        return {
+            "ok": False,
+            "model_available": False,
+            "mode": "openai-error-fallback",
+            "model": model,
+            "error": repr(exc),
+            "reply": "LLM 主管调用失败；本次已使用 AgentHub 规则路由。",
+        }
+    reply = extract_openai_response_text(payload) or "LLM 主管已收到，但没有返回文本。"
+    return {"ok": True, "model_available": True, "mode": "openai-responses", "model": model, "reply": reply}
+
+
+def agenthub_llm_supervisor_message(
+    root: Path,
+    message: str,
+    *,
+    room_id: str | None = None,
+    sender_id: str = "web-user",
+    route: bool = True,
+    attachments: list[dict] | None = None,
+    attachment_ids: list[str] | None = None,
+) -> dict:
+    text = str(message or "").strip()
+    if not text:
+        raise HTTPException(status_code=400, detail="message 不能为空")
+    active_room = agenthub_ensure_mission_control_room(root) if not room_id or room_id == MISSION_CONTROL_ROOM_ID else agenthub_create_task_room(
+        root,
+        short_title(text, "AgentHub LLM 主管房间"),
+        participants=[sender_id, SUPERVISOR_AGENT_ID],
+        created_by=sender_id,
+        room_id=room_id,
+    )
+    dispatch_result = None
+    if route:
+        dispatch_text = text if "@主管" in text or "@supervisor" in text.lower() else f"@主管 {text}"
+        dispatch_result = agenthub_dispatch_chat_message(
+            root,
+            dispatch_text,
+            sender_id=sender_id,
+            room_id=active_room["room_id"],
+            source="llm-supervisor-web",
+            attachments=attachments,
+            attachment_ids=attachment_ids,
+        )
+        active_room = dispatch_result.get("room") or active_room
+    context = {
+        "room_id": active_room.get("room_id"),
+        "routed_to": (dispatch_result or {}).get("routed_to") or [],
+        "attachments": (dispatch_result or {}).get("attachments") or [],
+    }
+    llm = call_agenthub_llm_supervisor(text, context)
+    supervisor_message = agenthub_append_task_room_message(
+        root,
+        active_room["room_id"],
+        role="supervisor",
+        sender_id=SUPERVISOR_AGENT_ID,
+        content=llm.get("reply") or "",
+        mentions=[],
+        routed_to=context["routed_to"],
+        task_id=(context["routed_to"][0].get("task_id") if context["routed_to"] else None),
+    )
+    now = agenthub_now()
+    state = {
+        "version": "1.0",
+        "updated_at": now,
+        "last_message_at": now,
+        "last_room_id": active_room.get("room_id"),
+        "last_sender_id": sender_id,
+        "last_mode": llm.get("mode"),
+        "last_model_available": bool(llm.get("model_available")),
+        "last_model": llm.get("model"),
+        "last_error": llm.get("error", ""),
+    }
+    write_agenthub_json(root, AGENTHUB_LLM_SUPERVISOR_STATE_PATH, state)
+    return {
+        "ok": True,
+        "room": active_room,
+        "dispatch": dispatch_result,
+        "llm": llm,
+        "supervisor_message": supervisor_message,
+        "state": agenthub_llm_supervisor_state(root),
+    }
+
+
+def agenthub_openclaw_heartbeat_state(root: Path) -> dict:
+    data = read_agenthub_json(root, AGENTHUB_OPENCLAW_HEARTBEAT_PATH)
+    if not data:
+        return {
+            "ok": True,
+            "status": "unknown",
+            "agent_id": "openclaw-agent",
+            "last_heartbeat_at": "",
+            "age_seconds": None,
+        }
+    last = str(data.get("last_heartbeat_at") or "")
+    age = None
+    try:
+        if last:
+            age = max(0, int(datetime.now(timezone.utc).timestamp() - datetime.fromisoformat(last).astimezone(timezone.utc).timestamp()))
+    except ValueError:
+        age = None
+    stale_after = int(data.get("stale_after_seconds") or 180)
+    data["ok"] = True
+    data["age_seconds"] = age
+    data["status"] = "online" if age is not None and age <= stale_after else str(data.get("status") or "stale")
+    if age is not None and age > stale_after:
+        data["status"] = "stale"
+    return data
+
+
+def agenthub_record_openclaw_heartbeat(root: Path, payload: dict | None = None) -> dict:
+    payload = payload or {}
+    now = agenthub_now()
+    data = {
+        "version": "1.0",
+        "agent_id": "openclaw-agent",
+        "session_id": "session-openclaw-wechat-001",
+        "source": str(payload.get("source") or "openclaw"),
+        "bridge_id": str(payload.get("bridge_id") or payload.get("bridgeId") or "openclaw-wechat"),
+        "status": str(payload.get("status") or "online"),
+        "last_heartbeat_at": now,
+        "updated_at": now,
+        "stale_after_seconds": int(payload.get("stale_after_seconds") or payload.get("staleAfterSeconds") or 180),
+        "note": str(payload.get("note") or ""),
+        "details": payload.get("details") if isinstance(payload.get("details"), dict) else {},
+    }
+    write_agenthub_json(root, AGENTHUB_OPENCLAW_HEARTBEAT_PATH, data)
+    try:
+        update_agenthub_session(
+            root,
+            "session-openclaw-wechat-001",
+            {"status": "online", "last_heartbeat": now, "updated_at": now, "last_message_summary": "OpenClaw heartbeat"},
+        )
+    except HTTPException:
+        pass
+    agenthub_record_event(root, "openclaw_heartbeat", "OpenClaw heartbeat received", source=data["source"], bridge_id=data["bridge_id"])
+    return agenthub_openclaw_heartbeat_state(root)
 
 
 def agenthub_send_message_to_session(
@@ -4945,6 +5266,9 @@ def get_agenthub() -> dict:
     session_messages = agenthub_read_all_session_messages(root)[-120:]
     task_rooms = agenthub_items(agenthub_read_task_rooms(root))
     task_room_messages = agenthub_read_task_room_messages(root, limit=180)
+    daemon_state = agenthub_daemon_state(root)
+    llm_supervisor = agenthub_llm_supervisor_state(root)
+    openclaw_heartbeat = agenthub_openclaw_heartbeat_state(root)
     locks = read_agenthub_json(root, "coordination/LOCKS.json")
     task_items = tasks.get("items", [])
     events = read_agenthub_events(root)
@@ -4961,6 +5285,9 @@ def get_agenthub() -> dict:
         "session_messages": session_messages,
         "task_rooms": task_rooms,
         "task_room_messages": task_room_messages,
+        "daemon_state": daemon_state,
+        "llm_supervisor": llm_supervisor,
+        "openclaw_heartbeat": openclaw_heartbeat,
         "sidebar_tree": agenthub_build_sidebar_tree(root),
         "codex_threads": codex_threads.get("items", []),
         "codex_threads_updated_at": str(codex_threads.get("updated_at", "")),
@@ -5182,7 +5509,74 @@ def get_agenthub_supervisor_state(request: Request) -> dict:
     session = agenthub_ensure_supervisor(root)
     agenthub_ensure_mission_control_room(root)
     rooms = agenthub_items(agenthub_read_task_rooms(root))
-    return {"ok": True, "agent_id": SUPERVISOR_AGENT_ID, "session": session, "rooms": rooms[-20:]}
+    return {
+        "ok": True,
+        "agent_id": SUPERVISOR_AGENT_ID,
+        "session": session,
+        "rooms": rooms[-20:],
+        "llm_supervisor": agenthub_llm_supervisor_state(root),
+        "daemon_state": agenthub_daemon_state(root),
+    }
+
+
+@app.get("/api/agenthub/daemon/state")
+def get_agenthub_daemon_state(request: Request) -> dict:
+    require_agenthub_queue_access(request)
+    root = agenthub_required_root()
+    return {"ok": True, "state": agenthub_daemon_state(root)}
+
+
+@app.post("/api/agenthub/daemon/tick")
+def post_agenthub_daemon_tick(request: Request) -> dict:
+    require_agenthub_queue_access(request)
+    root = agenthub_required_root()
+    return {"ok": True, "state": agenthub_daemon_tick(root, source="api")}
+
+
+@app.get("/api/agenthub/llm-supervisor/state")
+def get_agenthub_llm_supervisor_state(request: Request) -> dict:
+    require_agenthub_queue_access(request)
+    root = agenthub_required_root()
+    return {"ok": True, "state": agenthub_llm_supervisor_state(root)}
+
+
+@app.post("/api/agenthub/llm-supervisor/message")
+async def post_agenthub_llm_supervisor_message(request: Request) -> dict:
+    require_agenthub_queue_access(request)
+    try:
+        payload = await request.json()
+    except Exception as exc:
+        raise HTTPException(status_code=400, detail="请求格式错误") from exc
+    if not isinstance(payload, dict):
+        raise HTTPException(status_code=400, detail="请求格式错误")
+    root = agenthub_required_root()
+    return agenthub_llm_supervisor_message(
+        root,
+        str(payload.get("message") or payload.get("text") or ""),
+        room_id=str(payload.get("room_id") or payload.get("roomId") or "") or None,
+        sender_id=str(payload.get("sender_id") or payload.get("senderId") or "web-user"),
+        route=bool(payload.get("route", True)),
+        attachments=payload.get("attachments") if isinstance(payload.get("attachments"), list) else [],
+        attachment_ids=agenthub_payload_attachment_ids(payload),
+    )
+
+
+@app.get("/api/agenthub/openclaw/heartbeat")
+def get_agenthub_openclaw_heartbeat(request: Request) -> dict:
+    require_agenthub_queue_access(request)
+    root = agenthub_required_root()
+    return {"ok": True, "heartbeat": agenthub_openclaw_heartbeat_state(root)}
+
+
+@app.post("/api/agenthub/openclaw/heartbeat")
+async def post_agenthub_openclaw_heartbeat(request: Request) -> dict:
+    require_agenthub_queue_access(request)
+    try:
+        payload = await request.json()
+    except Exception:
+        payload = {}
+    root = agenthub_required_root()
+    return {"ok": True, "heartbeat": agenthub_record_openclaw_heartbeat(root, payload if isinstance(payload, dict) else {})}
 
 
 @app.post("/api/agenthub/supervisor/message")
@@ -5661,6 +6055,16 @@ async def coursemind_proxy(proxy_path: str, request: Request):
 @app.get("/", include_in_schema=False)
 def index() -> FileResponse:
     return FileResponse(str(FRONTEND_DIR / "index.html"), headers={"Cache-Control": "no-store"})
+
+
+@app.on_event("startup")
+def agenthub_startup_daemon() -> None:
+    start_agenthub_daemon_thread()
+
+
+@app.on_event("shutdown")
+def agenthub_shutdown_daemon() -> None:
+    stop_agenthub_daemon_thread()
 
 
 app.mount("/static", VersionedStaticFiles(directory=str(FRONTEND_DIR)), name="static")

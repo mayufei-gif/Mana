@@ -38,7 +38,9 @@ class AgentHubDispatchContractTest(unittest.TestCase):
         self.tmp = tempfile.TemporaryDirectory()
         self.root = Path(self.tmp.name)
         self.old_agenthub_dir = os.environ.get("AGENTHUB_DIR")
+        self.old_openai_api_key = os.environ.get("OPENAI_API_KEY")
         os.environ["AGENTHUB_DIR"] = str(self.root)
+        os.environ.pop("OPENAI_API_KEY", None)
         write_json(
             self.root,
             "coordination/AGENT_REGISTRY.json",
@@ -96,6 +98,10 @@ class AgentHubDispatchContractTest(unittest.TestCase):
             os.environ.pop("AGENTHUB_DIR", None)
         else:
             os.environ["AGENTHUB_DIR"] = self.old_agenthub_dir
+        if self.old_openai_api_key is None:
+            os.environ.pop("OPENAI_API_KEY", None)
+        else:
+            os.environ["OPENAI_API_KEY"] = self.old_openai_api_key
         self.tmp.cleanup()
 
     def test_mcp_tool_registry_exposes_task_room_supervisor_and_attachment_tools(self) -> None:
@@ -329,6 +335,30 @@ class AgentHubDispatchContractTest(unittest.TestCase):
                 room_rows = read_ndjson(self.root, "logs/TASK_ROOM_MESSAGES.ndjson")
                 self.assertEqual(room_rows[-1]["room_id"], backend.MISSION_CONTROL_ROOM_ID)
                 self.assertEqual(room_rows[-1]["sender_id"], "chatgpt-supervisor")
+
+    def test_daemon_tick_llm_fallback_and_openclaw_heartbeat_are_persisted(self) -> None:
+        daemon = backend.agenthub_daemon_tick(self.root, source="contract-test")
+        self.assertEqual(daemon["mission_room_id"], backend.MISSION_CONTROL_ROOM_ID)
+        self.assertGreaterEqual(daemon["counts"]["sessions"], 4)
+        self.assertTrue((self.root / backend.AGENTHUB_DAEMON_STATE_PATH).exists())
+
+        llm = backend.agenthub_llm_supervisor_message(
+            self.root,
+            "@codexcli 只做 LLM 主管降级路由测试，不需要实际执行。",
+            room_id=backend.MISSION_CONTROL_ROOM_ID,
+            sender_id="web-user",
+        )
+        self.assertEqual(llm["room"]["room_id"], backend.MISSION_CONTROL_ROOM_ID)
+        self.assertFalse(llm["llm"]["model_available"])
+        self.assertEqual(llm["state"]["mode"], "rule-router-fallback")
+        self.assertIn("session-ubuntu-agenthub-001", [item["session_id"] for item in llm["dispatch"]["routed_to"]])
+        room_rows = read_ndjson(self.root, "logs/TASK_ROOM_MESSAGES.ndjson")
+        self.assertTrue(any(row["sender_id"] == "supervisor-agent" and "规则路由" in row["content"] for row in room_rows))
+
+        heartbeat = backend.agenthub_record_openclaw_heartbeat(self.root, {"source": "contract", "bridge_id": "openclaw-test"})
+        self.assertEqual(heartbeat["status"], "online")
+        self.assertEqual(heartbeat["agent_id"], "openclaw-agent")
+        self.assertTrue((self.root / backend.AGENTHUB_OPENCLAW_HEARTBEAT_PATH).exists())
 
     def test_sidebar_tree_contains_only_execution_agents_with_folders(self) -> None:
         backend.agenthub_create_task_room(self.root, "树状房间", participants=["supervisor-agent"])

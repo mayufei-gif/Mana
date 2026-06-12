@@ -1180,6 +1180,7 @@ function renderAgentHubDetailDrawer(data) {
   let payload = null;
   if (drawer.type === "room") {
     const room = (data.task_rooms || []).find((item) => item.room_id === drawer.id) || agentHubMissionControlRoom(data);
+    const isMission = room.room_id === AGENTHUB_MISSION_CONTROL_ROOM_ID;
     title = room.room_id === AGENTHUB_MISSION_CONTROL_ROOM_ID ? "主管总控室详情" : "任务房间详情";
     payload = {
       room_id: room.room_id,
@@ -1189,6 +1190,11 @@ function renderAgentHubDetailDrawer(data) {
       related_task_ids: room.related_task_ids || [],
       updated_at: room.updated_at,
     };
+    if (isMission) {
+      payload.daemon_state = data.daemon_state || {};
+      payload.llm_supervisor = data.llm_supervisor || {};
+      payload.openclaw_heartbeat = data.openclaw_heartbeat || {};
+    }
   } else if (drawer.type === "session") {
     const session = (data.sessions || []).find((item) => item.session_id === drawer.id);
     title = "会话详情";
@@ -3895,22 +3901,25 @@ function bindProjectShell() {
       state.agenthubSending = true;
       renderAgentHubSessions(state.agenthub || {});
       uploadAgentHubDraftFiles(draftFiles)
-        .then((attachments) =>
-          api(
-            mode === "room"
+        .then((attachments) => {
+          const isMissionControl = mode === "room" && targetId === AGENTHUB_MISSION_CONTROL_ROOM_ID;
+          const endpoint = isMissionControl
+            ? "/api/agenthub/llm-supervisor/message"
+            : mode === "room"
               ? `/api/agenthub/task-rooms/${encodeURIComponent(targetId)}/messages`
-              : `/api/agenthub/sessions/${encodeURIComponent(targetId)}/messages`,
-            {
-              method: "POST",
-              body: JSON.stringify({
-                message: content,
-                source,
-                sender_id: "web-user",
-                attachment_ids: attachments.map((item) => item.attachment_id).filter(Boolean),
-              }),
-            }
-          )
-        )
+              : `/api/agenthub/sessions/${encodeURIComponent(targetId)}/messages`;
+          return api(endpoint, {
+            method: "POST",
+            body: JSON.stringify({
+              message: content,
+              room_id: mode === "room" ? targetId : undefined,
+              source: isMissionControl ? "llm-supervisor-web" : source,
+              sender_id: "web-user",
+              route: true,
+              attachment_ids: attachments.map((item) => item.attachment_id).filter(Boolean),
+            }),
+          });
+        })
         .then(async () => {
           state.agenthubDraftText[key] = "";
           state.agenthubDraftAttachments[key] = [];
