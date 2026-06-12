@@ -19,10 +19,18 @@ import urllib.request
 from datetime import datetime, timezone
 from pathlib import Path
 
+from codex_app_discovery import (
+    capabilities as codex_capabilities,
+    dry_run_send as codex_dry_run_send,
+    generate_discovery_files,
+    load_thread_tree,
+)
+
 
 DEFAULT_SERVER_URL = "https://inforadar.mana-mana.top/mcp"
 DEFAULT_SESSION_ID = "session-win-api-agenthub-001"
 SCRIPT_DIR = Path(__file__).resolve().parent
+DEFAULT_AGENTHUB_ROOT = SCRIPT_DIR.parent.parent
 DEFAULT_OUTBOX = SCRIPT_DIR / "outbox"
 DEFAULT_STATE = SCRIPT_DIR / "bridge_state.json"
 
@@ -254,6 +262,47 @@ def cmd_reply(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_discover_thread_tree(args: argparse.Namespace) -> int:
+    result = generate_discovery_files(
+        Path(args.codex_root).expanduser(),
+        Path(args.agenthub_root).expanduser(),
+        args.local_bridge_status_url,
+    )
+    print(json.dumps(result, ensure_ascii=False, indent=2))
+    return 0
+
+
+def cmd_capabilities(args: argparse.Namespace) -> int:
+    result = codex_capabilities(Path(args.agenthub_root).expanduser(), args.local_bridge_status_url)
+    print(json.dumps(result, ensure_ascii=False, indent=2))
+    return 0
+
+
+def cmd_thread_tree(args: argparse.Namespace) -> int:
+    root = Path(args.agenthub_root).expanduser()
+    tree_path = root / "coordination" / "CODEX_APP_THREAD_TREE.json"
+    if args.refresh or not tree_path.exists():
+        generate_discovery_files(Path(args.codex_root).expanduser(), root, args.local_bridge_status_url)
+    print(json.dumps(load_thread_tree(root), ensure_ascii=False, indent=2))
+    return 0
+
+
+def cmd_dry_run_send(args: argparse.Namespace) -> int:
+    root = Path(args.agenthub_root).expanduser()
+    tree_path = root / "coordination" / "CODEX_APP_THREAD_TREE.json"
+    if not tree_path.exists():
+        generate_discovery_files(Path(args.codex_root).expanduser(), root, args.local_bridge_status_url)
+    result = codex_dry_run_send(
+        root,
+        session_id=args.session_id,
+        thread_ref=args.thread_ref,
+        message=args.message,
+        bridge_status_url=args.local_bridge_status_url,
+    )
+    print(json.dumps(result, ensure_ascii=False, indent=2))
+    return 0
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="Windows Codex App Bridge for AgentHub")
     parser.add_argument("--server-url", default=os.environ.get("AGENTHUB_SERVER_URL") or os.environ.get("AGENTHUB_MCP_URL") or DEFAULT_SERVER_URL)
@@ -261,6 +310,8 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--bridge-id", default=os.environ.get("AGENTHUB_WINDOWS_BRIDGE_ID", "windows-codex-app-bridge"))
     parser.add_argument("--session-id", default=os.environ.get("AGENTHUB_SESSION_ID", DEFAULT_SESSION_ID))
     parser.add_argument("--codex-root", default=os.environ.get("CODEX_ROOT", str(Path.home() / ".codex")))
+    parser.add_argument("--agenthub-root", default=os.environ.get("AGENTHUB_ROOT", str(DEFAULT_AGENTHUB_ROOT)))
+    parser.add_argument("--local-bridge-status-url", default=os.environ.get("CODEX_LOCAL_BRIDGE_STATUS_URL", "http://127.0.0.1:19577/status"))
     parser.add_argument("--outbox", default=os.environ.get("AGENTHUB_BRIDGE_OUTBOX", str(DEFAULT_OUTBOX)))
     parser.add_argument("--state", default=os.environ.get("AGENTHUB_BRIDGE_STATE", str(DEFAULT_STATE)))
     parser.add_argument("--timeout", type=float, default=30.0)
@@ -280,6 +331,17 @@ def build_parser() -> argparse.ArgumentParser:
     reply.add_argument("--file", default="")
     reply.add_argument("--task-id", default="")
     reply.add_argument("--in-reply-to", default="")
+
+    thread_tree = sub.add_parser("thread-tree")
+    thread_tree.add_argument("--refresh", action="store_true")
+
+    sub.add_parser("discover-thread-tree")
+    sub.add_parser("capabilities")
+
+    dry_run = sub.add_parser("dry-run-send")
+    dry_run.add_argument("--session-id", default=argparse.SUPPRESS)
+    dry_run.add_argument("--thread-ref", required=True)
+    dry_run.add_argument("--message", required=True)
     return parser
 
 
@@ -293,6 +355,14 @@ def main(argv: list[str] | None = None) -> int:
         return cmd_poll(args)
     if args.command == "reply":
         return cmd_reply(args)
+    if args.command == "discover-thread-tree":
+        return cmd_discover_thread_tree(args)
+    if args.command == "capabilities":
+        return cmd_capabilities(args)
+    if args.command == "thread-tree":
+        return cmd_thread_tree(args)
+    if args.command == "dry-run-send":
+        return cmd_dry_run_send(args)
     raise SystemExit(f"Unknown command: {args.command}")
 
 

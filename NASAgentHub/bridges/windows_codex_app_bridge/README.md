@@ -64,6 +64,44 @@ python "NASAgentHub\bridges\windows_codex_app_bridge\bridge.py" reply --session-
 - `app-server-delivered`：未来真实绑定 Codex App `thread_ref` 后，消息已通过 app-server 投递。
 - `app-server-replied`：未来通过 app-server 读取到真实 Codex 回复。
 
+## 阶段 1F 只读发现与 dry-run
+
+生成真实 Codex App thread 树和候选绑定：
+
+```powershell
+python "NASAgentHub\bridges\windows_codex_app_bridge\bridge.py" discover-thread-tree
+```
+
+默认只扫描并绑定 `G:\E盘\工作项目文件\NAS\微信直连codex` 这个 Codex App 文件夹里的对话。需要临时切换目标时，可设置：
+
+```powershell
+$env:CODEX_APP_TARGET_WORKSPACE = "G:\E盘\工作项目文件\NAS\微信直连codex"
+```
+
+输出文件：
+
+- `coordination/CODEX_APP_THREAD_TREE.json`
+- `coordination/CODEX_APP_THREAD_BINDINGS.json`
+
+查看当前本机投递能力：
+
+```powershell
+python "NASAgentHub\bridges\windows_codex_app_bridge\bridge.py" capabilities
+```
+
+只做 dry-run，不真实投递：
+
+```powershell
+python "NASAgentHub\bridges\windows_codex_app_bridge\bridge.py" dry-run-send --session-id "session-win-api-agenthub-001" --thread-ref "<thread_id>" --message "测试消息"
+```
+
+注意：
+
+- 自动发现的绑定只能是 `candidate`，用户确认前不能改成 `active`。
+- 当前绑定粒度优先是 `folder_candidate`：列出该文件夹里的 `candidate_threads`，由用户明确选择 `thread_ref` 后再做 dry-run。
+- 如果 `delivery_method` 是 `app-ipc-pipe` 但 `app_ipc_protocol_known=false`，只能说明 IPC 管道有线索，不能写入用户消息。
+- `send-real-test` 必须带 `--confirm`，且当前协议未知时会拒绝真实投递。
+
 ## 后续升级
 
 拿到 Codex App app-server/thread API 后，把 `poll` 中的 `write_handoff` 替换为真实 `send_message(thread_ref, content)`，并把状态标记为 `status=app-server-delivered`、`delivery=app-server-delivered`。读取到回复后再标记 `app-server-replied`。

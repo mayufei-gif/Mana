@@ -2326,6 +2326,34 @@ def agenthub_required_root() -> Path:
     return root
 
 
+def run_windows_codex_bridge(args: list[str], timeout: int = 20, allow_rejected: bool = False) -> dict:
+    root = agenthub_required_root()
+    script = root / "bridges" / "windows_codex_app_bridge" / "bridge.py"
+    if not script.exists():
+        raise HTTPException(status_code=404, detail="Windows Codex App Bridge 脚本不存在")
+    proc = subprocess.run(
+        [sys.executable, str(script), "--agenthub-root", str(root), *args],
+        cwd=str(root),
+        env=os.environ.copy(),
+        check=False,
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT,
+        timeout=timeout,
+    )
+    output = sanitize_log_text(proc.stdout or "", max_chars=16000)
+    if proc.returncode != 0 and not (allow_rejected and proc.returncode == 2):
+        raise HTTPException(status_code=500, detail=output or f"Windows Codex App Bridge 命令失败：{proc.returncode}")
+    try:
+        data = json.loads(output)
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=f"Windows Codex App Bridge 返回无法解析：{output}") from exc
+    if proc.returncode != 0:
+        data.setdefault("ok", False)
+        data.setdefault("rejected", True)
+    return data
+
+
 def agenthub_read_agents(root: Path) -> dict:
     data = read_agenthub_json(root, "coordination/AGENT_REGISTRY.json")
     if agenthub_items(data):
@@ -2340,6 +2368,15 @@ def agenthub_read_sessions(root: Path) -> dict:
 
 SUPERVISOR_AGENT_ID = "supervisor-agent"
 SUPERVISOR_SESSION_ID = "session-supervisor-main-001"
+MISSION_CONTROL_ROOM_ID = "mission-control-main"
+MISSION_CONTROL_ROOM_TITLE = "ChatGPT 总管主房间"
+MISSION_CONTROL_DEFAULT_SOURCES = {
+    "mcp",
+    "mcp-task-room",
+    "mcp-supervisor-dispatch",
+    "supervisor-web",
+    "supervisor-dispatch-web",
+}
 AGENTHUB_MENTION_ALIASES = {
     "@主管": SUPERVISOR_AGENT_ID,
     "@supervisor": SUPERVISOR_AGENT_ID,
@@ -2352,6 +2389,9 @@ AGENTHUB_MENTION_ALIASES = {
     "@windows-gpt-codex-app-agent": "windows-gpt-codex-app-agent",
     "@ubuntu-codex-cli": "ubuntu-codex-cli-agent",
     "@ubuntu": "ubuntu-codex-cli-agent",
+    "@codexcli": "ubuntu-codex-cli-agent",
+    "@codexapp-api": "windows-api-codex-app-agent",
+    "@codexapp-gpt": "windows-gpt-codex-app-agent",
 }
 
 
@@ -2573,6 +2613,28 @@ def agenthub_create_task_room(
     return room
 
 
+def agenthub_ensure_mission_control_room(root: Path) -> dict:
+    return agenthub_create_task_room(
+        root,
+        MISSION_CONTROL_ROOM_TITLE,
+        participants=[
+            SUPERVISOR_AGENT_ID,
+            "ubuntu-codex-cli-agent",
+            "windows-api-codex-app-agent",
+            "windows-gpt-codex-app-agent",
+            "openclaw-agent",
+        ],
+        created_by="system",
+        room_id=MISSION_CONTROL_ROOM_ID,
+    )
+
+
+def agenthub_should_use_mission_control_room(source: str, text: str) -> bool:
+    clean_source = str(source or "").strip().lower()
+    clean_text = str(text or "")
+    return clean_source in MISSION_CONTROL_DEFAULT_SOURCES or "@主管" in clean_text or "@supervisor" in clean_text.lower()
+
+
 def agenthub_update_task_room(root: Path, room_id: str, patch: dict) -> dict:
     data = agenthub_read_task_rooms(root)
     items = agenthub_items(data)
@@ -2782,6 +2844,39 @@ def agenthub_append_session_message(
                         "updated_at": now,
                     },
                 )
+        clean_room_id = str(room_id or "").strip()
+        if clean_room_id:
+            if clean_room_id == MISSION_CONTROL_ROOM_ID:
+                active_room = agenthub_ensure_mission_control_room(root)
+            else:
+                active_room = agenthub_create_task_room(
+                    root,
+                    short_title(text, "AgentHub 任务房间"),
+                    participants=[str(session.get("agent_id") or "")],
+                    created_by=str(session.get("agent_id") or "agent"),
+                    room_id=clean_room_id,
+                )
+            agenthub_append_task_room_message(
+                root,
+                clean_room_id,
+                role=role,
+                sender_id=str(session.get("agent_id") or role or "agent"),
+                content=text,
+                mentions=mentions or [],
+                routed_to=routed_to or [],
+                task_id=task_id,
+                attachments=attachments or [],
+            )
+            participants = set(active_room.get("participants") or [])
+            if session.get("agent_id"):
+                participants.add(str(session.get("agent_id")))
+            patch = {
+                "participants": sorted(participants),
+                "last_message_summary": short_title(text),
+            }
+            if task_id:
+                patch["related_task_ids"] = list(dict.fromkeys([*(active_room.get("related_task_ids") or []), task_id]))
+            agenthub_update_task_room(root, clean_room_id, patch)
         agenthub_record_event(
             root,
             "session_message_appended",
@@ -3094,8 +3189,13 @@ def agenthub_dispatch_chat_message(
     clean_attachments = agenthub_resolve_attachments(root, attachments, attachment_ids)
     mentions = agenthub_parse_mentions(text)
     active_room = None
-    if room_id:
-        active_room = agenthub_create_task_room(root, short_title(text, "AgentHub 任务房间"), participants=[sender_id], created_by=sender_id, room_id=room_id)
+    clean_room_id = str(room_id or "").strip()
+    if clean_room_id == MISSION_CONTROL_ROOM_ID:
+        active_room = agenthub_ensure_mission_control_room(root)
+    elif clean_room_id:
+        active_room = agenthub_create_task_room(root, short_title(text, "AgentHub 任务房间"), participants=[sender_id], created_by=sender_id, room_id=clean_room_id)
+    elif agenthub_should_use_mission_control_room(source, text):
+        active_room = agenthub_ensure_mission_control_room(root)
 
     targets = agenthub_resolve_dispatch_targets(root, mentions, fallback_session_id=str(session_id or ""))
     if not targets and active_room:
@@ -3189,18 +3289,30 @@ def agenthub_folder_label_for_thread(thread: dict) -> str:
     return str(thread.get("project") or thread.get("workspace") or "Codex App 会话")
 
 
+def agenthub_thread_sidebar_summary(thread: dict) -> str:
+    thread_ref = str(thread.get("thread_ref") or thread.get("thread_id") or "").strip()
+    short_ref = thread_ref[:8] if thread_ref else ""
+    recent = thread.get("recent_messages")
+    message_count = len(recent) if isinstance(recent, list) else thread.get("message_count")
+    parts = []
+    if message_count not in (None, ""):
+        parts.append(f"{message_count} 条")
+    if short_ref:
+        parts.append(short_ref)
+    parts.append(str(thread.get("confidence") or "candidate"))
+    return " · ".join(parts)
+
+
 def agenthub_build_sidebar_tree(root: Path) -> dict:
     agenthub_ensure_supervisor(root)
     sessions = agenthub_items(agenthub_read_sessions(root))
     agents = agenthub_items(agenthub_read_agents(root))
     codex_threads = agenthub_items(read_agenthub_json(root, "coordination/CODEX_APP_THREADS.json"))
-    rooms = agenthub_items(agenthub_read_task_rooms(root))
     preferred_agents = [
-        (SUPERVISOR_AGENT_ID, "主管"),
-        ("windows-api-codex-app-agent", "Windows API Codex App Agent"),
-        ("windows-gpt-codex-app-agent", "Windows GPT Codex App Agent"),
-        ("ubuntu-codex-cli-agent", "Ubuntu Codex CLI Agent"),
-        ("openclaw-agent", "OpenClaw"),
+        ("ubuntu-codex-cli-agent", "codexcli"),
+        ("windows-api-codex-app-agent", "codexapp-api"),
+        ("openclaw-agent", "openclaw"),
+        ("windows-gpt-codex-app-agent", "codexapp-gpt"),
     ]
     agent_lookup = {str(agent.get("agent_id") or ""): agent for agent in agents}
 
@@ -3238,36 +3350,18 @@ def agenthub_build_sidebar_tree(root: Path) -> dict:
                         "thread_id": thread.get("thread_id"),
                         "agent_id": agent_id,
                         "status": thread.get("status"),
-                        "summary": thread.get("preview") or thread.get("title") or "",
+                        "summary": agenthub_thread_sidebar_summary(thread),
                     }
                 )
         items.append(
             {
                 "type": "agent",
                 "id": agent_id,
-                "label": agent.get("name") or fallback_label,
+                "label": fallback_label,
                 "agent_id": agent_id,
                 "children": list(folders.values()),
             }
         )
-    items.append(
-        {
-            "type": "task-room-root",
-            "id": "task-rooms",
-            "label": "任务房间",
-            "children": [
-                {
-                    "type": "task-room",
-                    "id": room.get("room_id"),
-                    "label": room.get("title") or room.get("room_id"),
-                    "room_id": room.get("room_id"),
-                    "status": room.get("status"),
-                    "summary": room.get("last_message_summary") or "",
-                }
-                for room in rooms
-            ],
-        }
-    )
     return {"ok": True, "items": items}
 
 
@@ -3552,7 +3646,7 @@ def agenthub_call_tool(name: str, arguments: dict | None = None) -> dict:
             agenthub_dispatch_chat_message(
                 root,
                 str(args.get("message") or ""),
-                sender_id="mcp",
+                sender_id="chatgpt-supervisor",
                 room_id=str(args.get("room_id") or ""),
                 source="mcp-task-room",
                 attachments=agenthub_mcp_attachments(root, args),
@@ -3564,7 +3658,7 @@ def agenthub_call_tool(name: str, arguments: dict | None = None) -> dict:
             agenthub_dispatch_chat_message(
                 root,
                 text if "@主管" in text or "@supervisor" in text.lower() else f"@主管 {text}",
-                sender_id="mcp",
+                sender_id="chatgpt-supervisor",
                 room_id=str(args.get("room_id") or "") or None,
                 source="mcp-supervisor-dispatch",
                 attachments=agenthub_mcp_attachments(root, args),
@@ -4841,6 +4935,7 @@ def get_agenthub() -> dict:
     if root is None:
         return {"ok": False, "error": "AgentHub 目录不存在", "projects": [], "tasks": [], "agents": [], "locks": []}
     agenthub_ensure_supervisor(root)
+    agenthub_ensure_mission_control_room(root)
     projects = read_agenthub_json(root, "coordination/PROJECT_REGISTRY.json")
     tasks = read_agenthub_json(root, "coordination/TASK_BOARD.json")
     agents = agenthub_read_agents(root)
@@ -4884,6 +4979,44 @@ def get_agenthub() -> dict:
             ]
         ),
     }
+
+
+@app.get("/api/agenthub/codex-app/capabilities", dependencies=[Depends(require_access)])
+def get_agenthub_codex_app_capabilities() -> dict:
+    return run_windows_codex_bridge(["capabilities"], timeout=10)
+
+
+@app.get("/api/agenthub/codex-app/thread-tree", dependencies=[Depends(require_access)])
+def get_agenthub_codex_app_thread_tree(refresh: bool = Query(default=False)) -> dict:
+    args = ["thread-tree"]
+    if refresh:
+        args.append("--refresh")
+    return run_windows_codex_bridge(args, timeout=20)
+
+
+@app.get("/api/agenthub/codex-app/thread-bindings", dependencies=[Depends(require_access)])
+def get_agenthub_codex_app_thread_bindings(refresh: bool = Query(default=False)) -> dict:
+    root = agenthub_required_root()
+    if refresh:
+        run_windows_codex_bridge(["discover-thread-tree"], timeout=20)
+    return read_agenthub_json(root, "coordination/CODEX_APP_THREAD_BINDINGS.json")
+
+
+@app.post("/api/agenthub/codex-app/dry-run-send", dependencies=[Depends(require_access)])
+async def post_agenthub_codex_app_dry_run_send(request: Request) -> dict:
+    try:
+        payload = await request.json()
+    except Exception as exc:
+        raise HTTPException(status_code=400, detail="请求格式错误") from exc
+    session_id = str(payload.get("session_id") or "").strip()
+    thread_ref = str(payload.get("thread_ref") or "").strip()
+    message = str(payload.get("message") or "").strip()
+    if not session_id or not thread_ref or not message:
+        raise HTTPException(status_code=400, detail="session_id / thread_ref / message 不能为空")
+    return run_windows_codex_bridge(
+        ["dry-run-send", "--session-id", session_id, "--thread-ref", thread_ref, "--message", message],
+        timeout=20,
+    )
 
 
 @app.get("/api/agenthub/overview")
@@ -4949,6 +5082,7 @@ async def post_agenthub_session_manual_reply(session_id: str, request: Request) 
         in_reply_to=str(payload.get("in_reply_to") or payload.get("inReplyTo") or "") or None,
         status="codex-replied",
         delivery="manual-reply",
+        room_id=str(payload.get("room_id") or payload.get("roomId") or "") or None,
     )
     return {"ok": True, "message": message}
 
@@ -4984,6 +5118,7 @@ async def post_agenthub_session_message(session_id: str, request: Request) -> di
 def get_agenthub_sidebar_tree(request: Request) -> dict:
     require_agenthub_queue_access(request)
     root = agenthub_required_root()
+    agenthub_ensure_mission_control_room(root)
     return agenthub_build_sidebar_tree(root)
 
 
@@ -4991,6 +5126,7 @@ def get_agenthub_sidebar_tree(request: Request) -> dict:
 def get_agenthub_task_rooms(request: Request) -> dict:
     require_agenthub_queue_access(request)
     root = agenthub_required_root()
+    agenthub_ensure_mission_control_room(root)
     return {"ok": True, "rooms": agenthub_items(agenthub_read_task_rooms(root)), "data": agenthub_read_task_rooms(root)}
 
 
@@ -5044,6 +5180,7 @@ def get_agenthub_supervisor_state(request: Request) -> dict:
     require_agenthub_queue_access(request)
     root = agenthub_required_root()
     session = agenthub_ensure_supervisor(root)
+    agenthub_ensure_mission_control_room(root)
     rooms = agenthub_items(agenthub_read_task_rooms(root))
     return {"ok": True, "agent_id": SUPERVISOR_AGENT_ID, "session": session, "rooms": rooms[-20:]}
 
@@ -5179,6 +5316,7 @@ async def post_agenthub_bridge_reply(request: Request) -> dict:
         in_reply_to=str(payload.get("in_reply_to") or payload.get("inReplyTo") or "") or None,
         status=str(payload.get("status") or "received"),
         delivery=str(payload.get("delivery") or "bridge-reply"),
+        room_id=str(payload.get("room_id") or payload.get("roomId") or "") or None,
     )
     return {"ok": True, "message": message}
 

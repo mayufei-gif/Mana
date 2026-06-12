@@ -247,14 +247,100 @@ class AgentHubDispatchContractTest(unittest.TestCase):
             )
         )
 
-    def test_sidebar_tree_contains_agent_folder_session_and_task_rooms(self) -> None:
+    def test_supervisor_messages_without_room_use_mission_control_room(self) -> None:
+        result = backend.agenthub_dispatch_chat_message(
+            self.root,
+            "@主管 请把这条任务交给 @ubuntu-codex-cli",
+            sender_id="web-user",
+            source="supervisor-web",
+        )
+
+        self.assertEqual(result["room"]["room_id"], backend.MISSION_CONTROL_ROOM_ID)
+        room_rows = read_ndjson(self.root, "logs/TASK_ROOM_MESSAGES.ndjson")
+        self.assertEqual(room_rows[-1]["room_id"], backend.MISSION_CONTROL_ROOM_ID)
+        self.assertEqual(room_rows[-1]["sender_id"], "web-user")
+
+        mcp_response = backend.handle_mcp_rpc(
+            {
+                "jsonrpc": "2.0",
+                "id": 7,
+                "method": "tools/call",
+                "params": {
+                    "name": "supervisor_dispatch",
+                    "arguments": {"message": "@主管 只做默认总控室落盘测试"},
+                },
+            }
+        )
+        mcp_result = mcp_tool_payload(mcp_response)
+        self.assertEqual(mcp_result["room"]["room_id"], backend.MISSION_CONTROL_ROOM_ID)
+        room_rows = read_ndjson(self.root, "logs/TASK_ROOM_MESSAGES.ndjson")
+        self.assertEqual(room_rows[-1]["sender_id"], "chatgpt-supervisor")
+
+    def test_agent_reply_with_room_id_is_mirrored_to_task_room(self) -> None:
+        message = backend.agenthub_append_session_message(
+            self.root,
+            "session-ubuntu-agenthub-001",
+            "Ubuntu 路由测试回复",
+            role="codex",
+            source="bridge-reply-test",
+            task_id="task-contract-reply",
+            room_id=backend.MISSION_CONTROL_ROOM_ID,
+        )
+
+        self.assertEqual(message["room_id"], backend.MISSION_CONTROL_ROOM_ID)
+        room_rows = read_ndjson(self.root, "logs/TASK_ROOM_MESSAGES.ndjson")
+        self.assertEqual(room_rows[-1]["room_id"], backend.MISSION_CONTROL_ROOM_ID)
+        self.assertEqual(room_rows[-1]["sender_id"], "ubuntu-codex-cli-agent")
+        self.assertEqual(room_rows[-1]["content"], "Ubuntu 路由测试回复")
+
+    def test_gpt_supervisor_mcp_can_route_to_every_execution_agent(self) -> None:
+        cases = [
+            ("@codexcli 只做 GPT MCP 路由测试，不需要实际执行。", "ubuntu-codex-cli-agent", "session-ubuntu-agenthub-001"),
+            ("@codexapp-api 继续", "windows-api-codex-app-agent", "session-win-api-agenthub-001"),
+            ("@openclaw 只做 GPT MCP 路由测试，不需要实际执行。", "openclaw-agent", "session-openclaw-wechat-001"),
+            ("@codexapp-gpt 只做 GPT MCP 路由测试，不需要实际执行。", "windows-gpt-codex-app-agent", "session-win-gpt-agenthub-001"),
+        ]
+        for message, agent_id, session_id in cases:
+            with self.subTest(agent_id=agent_id):
+                response = backend.handle_mcp_rpc(
+                    {
+                        "jsonrpc": "2.0",
+                        "id": 10,
+                        "method": "tools/call",
+                        "params": {
+                            "name": "supervisor_dispatch",
+                            "arguments": {"message": f"@主管 {message}"},
+                        },
+                    }
+                )
+                result = mcp_tool_payload(response)
+                self.assertEqual(result["room"]["room_id"], backend.MISSION_CONTROL_ROOM_ID)
+                self.assertIn(session_id, [item["session_id"] for item in result["routed_to"]])
+
+                session_rows = read_ndjson(self.root, "logs/SESSION_MESSAGES.ndjson")
+                self.assertTrue(
+                    any(
+                        row["session_id"] == session_id
+                        and row["agent_id"] == agent_id
+                        and row["source"] == "mcp-supervisor-dispatch"
+                        for row in session_rows
+                    )
+                )
+                room_rows = read_ndjson(self.root, "logs/TASK_ROOM_MESSAGES.ndjson")
+                self.assertEqual(room_rows[-1]["room_id"], backend.MISSION_CONTROL_ROOM_ID)
+                self.assertEqual(room_rows[-1]["sender_id"], "chatgpt-supervisor")
+
+    def test_sidebar_tree_contains_only_execution_agents_with_folders(self) -> None:
         backend.agenthub_create_task_room(self.root, "树状房间", participants=["supervisor-agent"])
         tree = backend.agenthub_build_sidebar_tree(self.root)
 
+        self.assertEqual(
+            [item["label"] for item in tree["items"]],
+            ["codexcli", "codexapp-api", "openclaw", "codexapp-gpt"],
+        )
+        self.assertFalse(any(item["id"] in {"task-rooms", backend.SUPERVISOR_AGENT_ID} for item in tree["items"]))
         api_agent = next(item for item in tree["items"] if item["id"] == "windows-api-codex-app-agent")
         self.assertTrue(any(child["type"] == "folder" and child["label"] == "AgentHub" for child in api_agent["children"]))
-        rooms = next(item for item in tree["items"] if item["id"] == "task-rooms")
-        self.assertTrue(any(child["type"] == "task-room" for child in rooms["children"]))
 
 
 if __name__ == "__main__":
