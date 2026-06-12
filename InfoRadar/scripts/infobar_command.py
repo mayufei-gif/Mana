@@ -233,6 +233,19 @@ def run_python(script: Path, args: list[str]) -> dict:
     return parsed
 
 
+def rebuild_search_index_inline() -> dict:
+    if os.environ.get("INFORADAR_SKIP_INLINE_INDEX", "").strip() == "1":
+        return {"ok": True, "skipped": True, "reason": "INFORADAR_SKIP_INLINE_INDEX=1"}
+    try:
+        if str(ROOT) not in sys.path:
+            sys.path.insert(0, str(ROOT))
+        from web.backend.file_index import build_search_index
+
+        return build_search_index(force=True)
+    except Exception as exc:
+        return {"ok": False, "error": repr(exc)}
+
+
 def result_files(result: dict) -> list[str]:
     keys = [
         "return_xlsx",
@@ -296,8 +309,10 @@ def metric_lines(details: dict) -> list[str]:
         "input_count": "输入条数",
         "auto_input_count": "自动源条数",
         "manual_input_count": "手动收集条数",
+        "watch_input_count": "官网观察输入条数",
         "output_count": "输出条数",
         "manual_output_count": "进入表格手动条数",
+        "watch_output_count": "进入表格官网观察条数",
         "manual_enter_today_count": "进入今日情报的手动条数",
         "manual_risk_count": "手动风险提醒条数",
         "manual_school_count": "手动学校信息条数",
@@ -342,6 +357,10 @@ def metric_lines(details: dict) -> list[str]:
         "watch_success_count": "监控成功",
         "watch_failed_count": "监控失败",
         "watch_update_count": "监控新增",
+        "search_index_ok": "搜索索引刷新成功",
+        "search_index_rebuilt": "搜索索引已重建",
+        "search_index_skipped": "搜索索引跳过重建",
+        "search_index_record_count": "搜索索引记录数",
         "opml_source_count": "OPML源数",
         "matched_count": "已在Folo源池",
         "missing_count": "未检测到源",
@@ -489,6 +508,7 @@ def execute(command: str) -> dict:
         result = run_python(ROOT / "scripts" / "build_source_pool.py", [])
     elif command_type == "生成Folo表格":
         topic = keyword or "今日"
+        watch_result = run_python(ROOT / "scripts" / "run_watch_tasks.py", ["--timeout", "6"])
         fetch_result = run_python(
             ROOT / "scripts" / "fetch_rss_items.py",
             [
@@ -510,10 +530,14 @@ def execute(command: str) -> dict:
         else:
             result = run_python(ROOT / "scripts" / "inforadar_mvp.py", ["--topic", topic, "--input", str(fetch_output)])
             merged_files = []
-            for file in result_files(result) + result_files(fetch_result):
+            for file in result_files(result) + result_files(fetch_result) + result_files(watch_result):
                 if file not in merged_files:
                     merged_files.append(file)
             result["output_files"] = merged_files
+            result["watch_request_count"] = watch_result.get("watch_request_count", 0)
+            result["watch_success_count"] = watch_result.get("watch_success_count", 0)
+            result["watch_failed_count"] = watch_result.get("watch_failed_count", 0)
+            result["watch_update_count"] = watch_result.get("watch_update_count", 0)
             result["fetch_source_count"] = fetch_result.get("attempted_source_count", 0)
             result["fetch_success_source_count"] = fetch_result.get("success_source_count", 0)
             result["fetch_failed_source_count"] = fetch_result.get("failed_source_count", 0)
@@ -524,6 +548,13 @@ def execute(command: str) -> dict:
             result["cache_fallback_added_count"] = fetch_result.get("cache_fallback_added_count", 0)
             result["fetch_summary"] = fetch_result.get("return_summary", "")
             result["fetch_status_csv"] = fetch_result.get("status_csv", "")
+            index_result = rebuild_search_index_inline()
+            result["search_index_ok"] = bool(index_result.get("ok"))
+            result["search_index_rebuilt"] = bool(index_result.get("rebuilt"))
+            result["search_index_skipped"] = bool(index_result.get("skipped"))
+            result["search_index_record_count"] = index_result.get("record_count", 0)
+            if not index_result.get("ok"):
+                result["search_index_error"] = index_result.get("error", "搜索索引刷新失败")
     elif command_type == "导入Folo订阅":
         result = run_python(ROOT / "scripts" / "import_folo_subscriptions_json.py", [])
     elif command_type == "Folo导入验收":
@@ -612,11 +643,12 @@ def append_audit(status: dict) -> None:
 
 def main() -> int:
     parser = argparse.ArgumentParser(description="InfoRadar command dispatcher")
-    parser.add_argument("command", help="例如：推荐订阅源 电工证")
+    parser.add_argument("command", nargs="+", help="例如：推荐订阅源 电工证")
     args = parser.parse_args()
+    command = " ".join(args.command)
 
     try:
-        status = execute(args.command)
+        status = execute(command)
         print(json.dumps(status, ensure_ascii=False, indent=2))
         return 0 if status.get("status") == "success" else 1
     except Exception as exc:
@@ -624,7 +656,7 @@ def main() -> int:
         task_id = f"cmd_{stamp()}"
         status = {
             "task_id": task_id,
-            "command": args.command,
+            "command": command,
             "status": "failed",
             "started_at": now_text(),
             "finished_at": now_text(),

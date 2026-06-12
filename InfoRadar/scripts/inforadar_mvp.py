@@ -17,6 +17,7 @@ from xml.sax.saxutils import escape as xml_escape
 import all_domain_rules
 import load_folo_link_items
 import load_manual_items
+import load_watch_updates
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -35,6 +36,10 @@ OUTPUT_COLUMNS = [
     "平台",
     "采集方式",
     "来源类型",
+    "school_category",
+    "detected_at",
+    "last_seen_at",
+    "is_new",
     "决策范围",
     "推送频率",
     "风险策略",
@@ -670,6 +675,14 @@ def is_folo_link_item(item: dict) -> bool:
     return item.get("input_source") == "folo_article_links" or item.get("source_type") == "folo_webhook"
 
 
+def is_watch_update_item(item: dict) -> bool:
+    return item.get("input_source") == "watch_updates" or item.get("source_type") == "watch_update"
+
+
+def is_curated_context_item(item: dict) -> bool:
+    return is_manual_item(item) or is_watch_update_item(item)
+
+
 def manual_daily_section(item: dict, fallback: str) -> str:
     broad = item.get("broad_category", "")
     risk = item.get("风险等级", "")
@@ -702,7 +715,7 @@ def manual_paywall_policy(item: dict, fallback: str) -> str:
 
 
 def merge_manual_domain(item: dict, domain: dict) -> dict:
-    if not is_manual_item(item):
+    if not is_curated_context_item(item):
         return domain
     merged = dict(domain)
     if item.get("broad_category"):
@@ -713,7 +726,7 @@ def merge_manual_domain(item: dict, domain: dict) -> dict:
         merged["platform"] = item["平台"]
     if item.get("decision_scope"):
         merged["decision_scope"] = item["decision_scope"]
-    merged["acquisition_mode"] = "manual_inbox"
+    merged["acquisition_mode"] = "watch_only" if is_watch_update_item(item) else "manual_inbox"
     merged["daily_section"] = manual_daily_section(item, merged.get("daily_section", "长期观察"))
     merged["risk_policy"] = manual_risk_policy(item, merged.get("risk_policy", "normal"))
     merged["paywall_policy"] = manual_paywall_policy(item, merged.get("paywall_policy", "public_only"))
@@ -733,14 +746,15 @@ def process_items(items: list[dict], topic: str = "") -> tuple[list[dict], dict]
     duplicate_count = 0
     url_anomaly_count = 0
     folo_link_input_count = sum(1 for item in items if is_folo_link_item(item))
-    auto_input_count = sum(1 for item in items if not is_manual_item(item) and not is_folo_link_item(item))
+    watch_input_count = sum(1 for item in items if is_watch_update_item(item))
+    auto_input_count = sum(1 for item in items if not is_manual_item(item) and not is_folo_link_item(item) and not is_watch_update_item(item))
     manual_input_count = sum(1 for item in items if is_manual_item(item))
     for raw in items:
         title = (raw.get("标题") or "").strip()
         if not title:
             continue
         normalized = normalize_title(title)
-        did = (raw.get("dedupe_key") or "").strip() if is_manual_item(raw) else ""
+        did = (raw.get("dedupe_key") or "").strip() if (is_manual_item(raw) or is_watch_update_item(raw)) else ""
         did = did or dedup_id(normalized)
         folder = infer_folder(raw)
         item = dict(raw)
@@ -753,9 +767,10 @@ def process_items(items: list[dict], topic: str = "") -> tuple[list[dict], dict]
                 item.get("订阅源URL", ""),
             )
         item["原文URL"] = normalized_url
-        if is_manual_item(item) and item.get("主分类"):
+        if is_curated_context_item(item) and item.get("主分类"):
             category = item.get("主分类", "")
-            tags = [part for part in [item.get("broad_category", ""), item.get("平台", ""), "手动收集"] if part]
+            label = "官网观察" if is_watch_update_item(item) else "手动收集"
+            tags = [part for part in [item.get("broad_category", ""), item.get("平台", ""), label] if part]
             decision_type = item.get("decision_scope") or infer_decision_type(category, strong_text(item))
         else:
             category, tags, decision_type = classify(item)
@@ -777,7 +792,7 @@ def process_items(items: list[dict], topic: str = "") -> tuple[list[dict], dict]
         action = action_value(item, category)
         opp = opportunity_value(item, category)
         risk_text, risk_numeric = risk_level(item)
-        if is_manual_item(item) and item.get("风险等级"):
+        if is_curated_context_item(item) and item.get("风险等级"):
             risk_text = item.get("风险等级", risk_text)
             risk_numeric = {"低": 20, "中": 60, "高": 95}.get(risk_text, risk_numeric)
         parts = {
@@ -802,9 +817,9 @@ def process_items(items: list[dict], topic: str = "") -> tuple[list[dict], dict]
         if category == "长期观察":
             total = min(total, LONG_TERM_OBSERVATION_SCORE_CAP)
         need_v, verify_status, official_url = need_verify(item, category)
-        if is_manual_item(item) and item.get("是否需要核验"):
+        if is_curated_context_item(item) and item.get("是否需要核验"):
             need_v = item.get("是否需要核验", need_v)
-            verify_status = "来自手动收集，需按来源类型核验" if need_v == "是" else verify_status
+            verify_status = "来自官网观察源，需打开原文核验" if is_watch_update_item(item) and need_v == "是" else ("来自手动收集，需按来源类型核验" if need_v == "是" else verify_status)
         if url_anomaly == "是":
             url_anomaly_count += 1
             need_v = "是"
@@ -837,6 +852,14 @@ def process_items(items: list[dict], topic: str = "") -> tuple[list[dict], dict]
             remarks.append("来自手动收集")
             if item.get("备注"):
                 remarks.append(item.get("备注", ""))
+        if is_watch_update_item(item):
+            remarks.append("来自watch_only官网观察源，不等同于Folo原条")
+            if item.get("备注"):
+                remarks.append(item.get("备注", ""))
+        school_category = item.get("school_category", "") if is_watch_update_item(item) else ""
+        detected_at = item.get("detected_at", "") if is_watch_update_item(item) else ""
+        last_seen_at = item.get("last_seen_at", "") if is_watch_update_item(item) else ""
+        is_new = item.get("is_new", "") if is_watch_update_item(item) else ""
         row = {
             "标题": title,
             "标准化标题": normalized,
@@ -846,7 +869,11 @@ def process_items(items: list[dict], topic: str = "") -> tuple[list[dict], dict]
             "源层级": domain["source_layer"],
             "平台": domain["platform"],
             "采集方式": domain["acquisition_mode"],
-            "来源类型": item.get("source_type", "folo_rss") if (is_manual_item(item) or is_folo_link_item(item)) else "folo_rss",
+            "来源类型": item.get("source_type", "folo_rss") if (is_manual_item(item) or is_folo_link_item(item) or is_watch_update_item(item)) else "folo_rss",
+            "school_category": school_category,
+            "detected_at": detected_at,
+            "last_seen_at": last_seen_at,
+            "is_new": is_new,
             "决策范围": domain["decision_scope"],
             "推送频率": domain["push_frequency"],
             "风险策略": domain["risk_policy"],
@@ -868,8 +895,8 @@ def process_items(items: list[dict], topic: str = "") -> tuple[list[dict], dict]
             "风险等级": risk_text,
             "决策影响类型": decision_type,
             "决策影响/信息差说明": relationship_text(category, decision_type),
-            "为什么与你有关": item.get("为什么与你有关") if is_manual_item(item) and item.get("为什么与你有关") else relationship_text(category, decision_type),
-            "建议行动": item.get("建议行动") if is_manual_item(item) and item.get("建议行动") else action_text(category, decision_type, item),
+            "为什么与你有关": item.get("为什么与你有关") if is_curated_context_item(item) and item.get("为什么与你有关") else relationship_text(category, decision_type),
+            "建议行动": item.get("建议行动") if is_curated_context_item(item) and item.get("建议行动") else action_text(category, decision_type, item),
             "是否需要官方核验": need_v,
             "核验状态": verify_status,
             "官方原文链接": official_url,
@@ -906,13 +933,17 @@ def process_items(items: list[dict], topic: str = "") -> tuple[list[dict], dict]
         "input_count": len(items),
         "auto_input_count": auto_input_count,
         "manual_input_count": manual_input_count,
+        "watch_input_count": watch_input_count,
         "folo_link_input_count": folo_link_input_count,
         "output_count": len(rows),
         "manual_output_count": sum(1 for row in rows if row.get("来源类型") == "manual_collected"),
+        "watch_output_count": sum(1 for row in rows if row.get("来源类型") == "watch_update"),
         "folo_link_output_count": sum(1 for row in rows if row.get("来源类型") == "folo_webhook"),
         "manual_enter_today_count": sum(1 for row in rows if row.get("来源类型") == "manual_collected" and row.get("是否进入今日情报") in {"yes", "pending", "risk_only"}),
         "manual_risk_count": sum(1 for row in rows if row.get("来源类型") == "manual_collected" and (row.get("风险等级") == "高" or row.get("全域栏目") == "风险提醒")),
         "manual_school_count": sum(1 for row in rows if row.get("来源类型") == "manual_collected" and row.get("全域栏目") == "我的学校"),
+        "school_watch_output_count": sum(1 for row in rows if row.get("来源类型") == "watch_update" and row.get("全域栏目") == "我的学校"),
+        "school_watch_new_count": sum(1 for row in rows if row.get("来源类型") == "watch_update" and row.get("全域栏目") == "我的学校" and row.get("is_new") == "yes"),
         "duplicate_count": duplicate_count,
         "topic_filtered_count": before_topic_filter_count - len(rows),
         "preference_weight_used": custom_weight_used,
@@ -1001,10 +1032,14 @@ def write_markdown(path: Path, rows: list[dict], stats: dict, xlsx_path: Path) -
         f"- 输入条数：{stats['input_count']}",
         f"- 自动源条数：{stats.get('auto_input_count', 0)}",
         f"- 手动收集条数：{stats.get('manual_input_count', 0)}",
+        f"- 官网观察条数：{stats.get('watch_input_count', 0)}",
         f"- Folo回流条数：{stats.get('folo_link_input_count', 0)}",
         f"- 进入表格手动条数：{stats.get('manual_output_count', 0)}",
+        f"- 进入表格官网观察条数：{stats.get('watch_output_count', 0)}",
         f"- 进入表格Folo回流条数：{stats.get('folo_link_output_count', 0)}",
         f"- 手动学校信息：{stats.get('manual_school_count', 0)}",
+        f"- 学校官网观察：{stats.get('school_watch_output_count', 0)}",
+        f"- 学校官网新增：{stats.get('school_watch_new_count', 0)}",
         f"- 手动风险提醒：{stats.get('manual_risk_count', 0)}",
         f"- 输出条数：{stats['output_count']}",
         f"- 合并重复标题：{stats['duplicate_count']}",
@@ -1044,7 +1079,8 @@ def write_wechat_summary(path: Path, rows: list[dict], stats: dict, xlsx_path: P
         f"已生成：{xlsx_path.name}",
         f"保存位置：{xlsx_path.parent}",
         f"输入 {stats['input_count']} 条，输出 {stats['output_count']} 条，合并重复 {stats['duplicate_count']} 条，过滤 {stats.get('topic_filtered_count', 0)} 条，URL异常 {stats.get('url_anomaly_count', 0)} 条。",
-        f"自动源 {stats.get('auto_input_count', 0)} 条，手动收集 {stats.get('manual_input_count', 0)} 条，Folo回流 {stats.get('folo_link_input_count', 0)} 条；进入本表手动 {stats.get('manual_output_count', 0)} 条，Folo回流 {stats.get('folo_link_output_count', 0)} 条。",
+        f"自动源 {stats.get('auto_input_count', 0)} 条，手动收集 {stats.get('manual_input_count', 0)} 条，官网观察 {stats.get('watch_input_count', 0)} 条，Folo回流 {stats.get('folo_link_input_count', 0)} 条；进入本表手动 {stats.get('manual_output_count', 0)} 条，官网观察 {stats.get('watch_output_count', 0)} 条，Folo回流 {stats.get('folo_link_output_count', 0)} 条。",
+        f"学校官网观察 {stats.get('school_watch_output_count', 0)} 条，其中新增 {stats.get('school_watch_new_count', 0)} 条。",
         "",
     ]
     if not top:
@@ -1082,6 +1118,43 @@ def first_rows_by_bucket(rows: list[dict], bucket: str, limit: int) -> list[dict
     return out
 
 
+def school_summary_action(row: dict) -> str:
+    category = row.get("school_category") or "其他学校事务"
+    mapping = {
+        "奖学金助学金": "核验申请条件、材料要求和截止时间。",
+        "比赛竞赛": "查看报名时间、参赛条件和提交材料。",
+        "校园招聘": "查看岗位要求、宣讲/双选时间和投递入口。",
+        "入团团员竞选": "核验报名条件、团支部流程和截止时间。",
+        "团委通知": "查看活动对象、报名方式和时间安排。",
+        "评优评先": "核验评选条件、公示时间和材料要求。",
+        "教务通知": "核验考试、课程、选课或学籍事项的具体安排。",
+        "学工通知": "查看学生事务要求和办理截止时间。",
+        "实习实践": "核验实践安排、材料提交和安全要求。",
+        "毕业相关": "查看毕业材料、档案、答辩或离校安排。",
+    }
+    return mapping.get(category, "打开官网原文核验时间、对象和具体要求。")
+
+
+def append_school_section(lines: list[str], rows: list[dict], limit: int = 5) -> None:
+    lines.append("【我的学校】")
+    school_rows = [row for row in rows if intel_bucket(row) == "我的学校"]
+    new_rows = [row for row in school_rows if row.get("is_new") == "yes"]
+    display_rows = (new_rows or school_rows)[:limit]
+    if not display_rows:
+        lines.append("今日暂无新的学校观察源更新。")
+        lines.append("")
+        return
+    if not new_rows:
+        lines.append("今日暂无新的学校观察源更新；以下是当前学校观察源快照中最相关条目：")
+    for idx, row in enumerate(display_rows, 1):
+        category = row.get("school_category") or "其他学校事务"
+        source = "官网观察源" if row.get("来源类型") == "watch_update" else (row.get("来源名称") or "学校信息")
+        lines.append(f"{idx}. [{category}] {row['标题']}")
+        lines.append(f"   来源：{source}")
+        lines.append(f"   建议：{school_summary_action(row)}")
+    lines.append("")
+
+
 def write_daily_intel_wechat_summary(path: Path, rows: list[dict], stats: dict, xlsx_path: Path) -> None:
     lines = [
         "【InfoRadar 今日情报】",
@@ -1089,13 +1162,12 @@ def write_daily_intel_wechat_summary(path: Path, rows: list[dict], stats: dict, 
         f"已生成：{xlsx_path.name}",
         f"保存位置：{xlsx_path.parent}",
         f"输入 {stats['input_count']} 条，输出 {stats['output_count']} 条，合并重复 {stats['duplicate_count']} 条，过滤 {stats.get('topic_filtered_count', 0)} 条，URL异常 {stats.get('url_anomaly_count', 0)} 条。",
-        f"自动源：{stats.get('auto_input_count', 0)} 条；手动收集：{stats.get('manual_input_count', 0)} 条；Folo回流：{stats.get('folo_link_input_count', 0)} 条；进入今日情报的手动条数：{stats.get('manual_enter_today_count', 0)} 条。",
-        f"学校信息：{stats.get('manual_school_count', 0)} 条；风险提醒：{stats.get('manual_risk_count', 0)} 条。",
+        f"自动源：{stats.get('auto_input_count', 0)} 条；手动收集：{stats.get('manual_input_count', 0)} 条；官网观察：{stats.get('watch_input_count', 0)} 条；Folo回流：{stats.get('folo_link_input_count', 0)} 条；进入今日情报的手动条数：{stats.get('manual_enter_today_count', 0)} 条。",
+        f"学校信息：手动 {stats.get('manual_school_count', 0)} 条，官网观察 {stats.get('school_watch_output_count', 0)} 条，其中新增 {stats.get('school_watch_new_count', 0)} 条；风险提醒：{stats.get('manual_risk_count', 0)} 条。",
         "",
     ]
     sections = [
         ("一、必须关注", ["我的学校", "专业成长"], 3),
-        ("二、我的学校", ["我的学校"], 3),
         ("三、专业成长", ["专业成长"], 3),
         ("四、AI与科技", ["AI与科技"], 3),
         ("五、热点与时事", ["热点与时事"], 3),
@@ -1116,6 +1188,8 @@ def write_daily_intel_wechat_summary(path: Path, rows: list[dict], stats: dict, 
             lines.append(f"   关联：{row['决策影响类型']} / {row['Folo文件夹路径']}")
             lines.append(f"   建议：{row['建议行动']}")
         lines.append("")
+        if title == "一、必须关注":
+            append_school_section(lines, rows, 5)
 
     action_rows = [row for row in rows if not blocked_from_top10(row)][:3]
     lines.append("今日建议：")
@@ -1145,8 +1219,10 @@ def main() -> int:
     try:
         items = read_csv_items(input_path)
         manual_items = load_manual_items.load_manual_items(args.topic)
+        watch_items = load_watch_updates.load_watch_updates(args.topic)
         folo_link_items = load_folo_link_items.load_folo_link_items(args.topic)
         items.extend(manual_items)
+        items.extend(watch_items)
         items.extend(folo_link_items)
         rows, stats = process_items(items, args.topic)
         stamp = now_stamp()

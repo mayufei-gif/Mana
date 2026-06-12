@@ -39,6 +39,7 @@ def automation_env() -> dict:
     env.setdefault("LC_ALL", "C.UTF-8")
     env["PYTHONIOENCODING"] = "utf-8"
     env["PYTHONUTF8"] = "1"
+    env["INFORADAR_SKIP_INLINE_INDEX"] = "1"
     return env
 
 

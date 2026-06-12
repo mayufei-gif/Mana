@@ -1876,9 +1876,10 @@ function renderIntelCards(items = state.currentApiHiveItems || []) {
       storeLocatorItem(id, item);
       const articleUrl = item.article_url || "";
       const officialUrl = item.official_url || articleUrl;
+      const isWatchOnly = item.collection_type === "官网观察源";
       const legacyFoloUrl = item.folo_url || "";
-      const foloUrl = item.folo_article_url || "";
-      const foloSourceBase = item.folo_source_url || (item.folo_matched ? legacyFoloUrl : "");
+      const foloUrl = isWatchOnly ? "" : item.folo_article_url || "";
+      const foloSourceBase = isWatchOnly ? "" : item.folo_source_url || (item.folo_matched ? legacyFoloUrl : "");
       const foloSourceUrl = foloLocatorUrl(foloSourceBase, item, "source");
       const foloKey = foloSourceKey(item, foloSourceUrl);
       const sourceClickCount = foloClickCount(foloKey);
@@ -1886,9 +1887,10 @@ function renderIntelCards(items = state.currentApiHiveItems || []) {
       const foloText = item.folo_article_url ? "Folo 看原条" : "Folo 原条待补";
       const verifyText = item.verify_status ? `核验：${item.verify_status}` : "原文核验";
       const sourceType = item.collection_type || "来源待确认";
-      const foloStatus = item.folo_position_status || (item.has_folo_internal_id ? "可打开 Folo 原条" : "缺少 Folo 内部条目 ID");
+      const foloStatus = isWatchOnly ? "Folo定位：不可定位" : item.folo_position_status || (item.has_folo_internal_id ? "可打开 Folo 原条" : "缺少 Folo 内部条目 ID");
       const hot = hotspotSignal(item);
       const publishedAt = formatBeijingDateTimeLoose(item.published_at || "", true) || "待补充";
+      const schoolCategory = item.school_category || "";
       return `
         <article class="intel-card${starClass}">
           <div class="intel-head">
@@ -1901,9 +1903,10 @@ function renderIntelCards(items = state.currentApiHiveItems || []) {
           </div>
           <div class="badges">
             <span class="badge">${escapeHtml(item.section || item.category || "未分类")}</span>
+            ${schoolCategory ? `<span class="badge">${escapeHtml(schoolCategory)}</span>` : ""}
             <span class="badge">${escapeHtml(item.source || "未知来源")}</span>
             <span class="badge ${item.collection_type === "手动收集" ? "manual" : ""}">${escapeHtml(sourceType)}</span>
-            <span class="badge ${item.has_folo_internal_id ? "" : "warn"}">${escapeHtml(foloStatus)}</span>
+            <span class="badge ${item.has_folo_internal_id && !isWatchOnly ? "" : "warn"}">${escapeHtml(foloStatus)}</span>
             <span class="badge score">评分 ${escapeHtml(item.score || "-")}</span>
             <span class="badge hotspot ${escapeHtml(hot.level)}">热点 ${escapeHtml(hot.score)}</span>
           </div>
@@ -1911,13 +1914,13 @@ function renderIntelCards(items = state.currentApiHiveItems || []) {
             <div>${escapeHtml(item.why || "暂无关联说明")}</div>
             <div>${escapeHtml(item.action || "暂无建议行动")}</div>
             <div class="hotspot-line">热点因子：${escapeHtml(hot.reasons.length ? hot.reasons.join("、") : "未命中强信号")}</div>
-            <div class="verify-line">${escapeHtml(verifyText)} · Folo 位置：${escapeHtml(item.folo_folder || "待补充")}</div>
+            <div class="verify-line">${escapeHtml(verifyText)} · ${isWatchOnly ? "Folo定位：不可定位" : `Folo 位置：${escapeHtml(item.folo_folder || "待补充")}`}</div>
           </div>
           <div class="intel-actions">
             <button class="secondary locator-trigger" data-locator="${escapeHtml(id)}" type="button">定位证据</button>
-            <a class="${officialUrl ? "" : "disabled"}" href="${escapeHtml(officialUrl || "#")}" target="_blank" rel="noreferrer">原文核验</a>
-            <a class="${foloUrl ? "secondary" : "disabled"}" href="${escapeHtml(foloUrl || "#")}" target="_blank" rel="noreferrer">${foloText}</a>
-            <a class="${foloSourceUrl ? "secondary folo-source-jump" : "disabled"}" href="${escapeHtml(foloSourceUrl || "#")}" target="_blank" rel="noreferrer" data-folo-source-click="${foloSourceUrl ? "1" : ""}" data-folo-key="${escapeHtml(foloKey)}" data-folo-title="${escapeHtml(item.title || "未命名情报")}" data-folo-source="${escapeHtml(item.source || "未知来源")}" data-folo-url="${escapeHtml(foloSourceUrl || "")}">Folo 源列表${sourceClickCount ? ` · ${escapeHtml(sourceClickCount)}次` : ""}</a>
+            <a class="${officialUrl ? "" : "disabled"}" href="${escapeHtml(officialUrl || "#")}" target="_blank" rel="noreferrer">${isWatchOnly ? "打开官网原文" : "原文核验"}</a>
+            ${isWatchOnly ? "" : `<a class="${foloUrl ? "secondary" : "disabled"}" href="${escapeHtml(foloUrl || "#")}" target="_blank" rel="noreferrer">${foloText}</a>`}
+            ${isWatchOnly ? "" : `<a class="${foloSourceUrl ? "secondary folo-source-jump" : "disabled"}" href="${escapeHtml(foloSourceUrl || "#")}" target="_blank" rel="noreferrer" data-folo-source-click="${foloSourceUrl ? "1" : ""}" data-folo-key="${escapeHtml(foloKey)}" data-folo-title="${escapeHtml(item.title || "未命名情报")}" data-folo-source="${escapeHtml(item.source || "未知来源")}" data-folo-url="${escapeHtml(foloSourceUrl || "")}">Folo 源列表${sourceClickCount ? ` · ${escapeHtml(sourceClickCount)}次` : ""}</a>`}
           </div>
         </article>
       `;
@@ -2134,9 +2137,13 @@ function renderSearchResults(data, append = false) {
       const globalIndex = offset + idx;
       const id = locatorId("search", globalIndex);
       storeLocatorItem(id, item);
-      const href = item.url || "";
-      const foloHref = item.folo_url || "";
-      const openLabel = item.kind === "情报" ? "原文核验" : item.kind === "文件" || item.kind === "源池文件" ? "查看文件" : "打开";
+      const payload = item.payload || {};
+      const collectionType = item.collection_type || payload.collection_type || payload["来源类型"] || "";
+      const schoolCategory = item.school_category || payload.school_category || "";
+      const isWatchOnly = collectionType === "官网观察源";
+      const href = item.url || payload.article_url || payload.official_url || "";
+      const foloHref = isWatchOnly ? "" : item.folo_url || "";
+      const openLabel = isWatchOnly ? "打开官网原文" : item.kind === "情报" ? "原文核验" : item.kind === "文件" || item.kind === "源池文件" ? "查看文件" : "打开";
       const actions = [
         `<button class="secondary locator-trigger" data-locator="${escapeHtml(id)}" type="button">定位证据</button>`,
         href ? `<a href="${escapeHtml(href)}" target="_blank" rel="noreferrer">${openLabel}</a>` : "",
@@ -2144,14 +2151,30 @@ function renderSearchResults(data, append = false) {
           ? `<a class="${item.folo_matched ? "folo" : "secondary"}" href="${escapeHtml(foloHref)}" target="_blank" rel="noreferrer">${escapeHtml(item.folo_label || "打开 Folo")}</a>`
           : "",
       ].filter(Boolean).join("");
-      const payload = item.payload || {};
       const isIntelLike = String(item.kind || "").includes("情报");
-      const timeLabel = isIntelLike ? "发布时间" : item.kind === "文件" || item.kind === "源池文件" ? "文件时间" : "记录时间";
-      const rawTimeValue = isIntelLike
-        ? (payload.published_at || payload["发布时间"] || "")
-        : (payload.published_at || payload["发布时间"] || payload.modified_at || payload.collected_at || payload.detected_at || payload["创建时间"] || "");
+      const watchPublishedAt = payload.published_at || payload["发布时间"] || "";
+      const watchDetectedAt = payload.detected_at || payload["检测时间"] || "";
+      const timeLabel = isWatchOnly
+        ? (watchPublishedAt ? "发布时间" : "检测时间")
+        : isIntelLike
+          ? "发布时间"
+          : item.kind === "文件" || item.kind === "源池文件"
+            ? "文件时间"
+            : "记录时间";
+      const rawTimeValue = isWatchOnly
+        ? (watchPublishedAt || watchDetectedAt)
+        : isIntelLike
+          ? (payload.published_at || payload["发布时间"] || "")
+          : (payload.published_at || payload["发布时间"] || payload.modified_at || payload.collected_at || payload.detected_at || payload["创建时间"] || "");
       const timeValue = formatBeijingDateTimeLoose(rawTimeValue, true) || rawTimeValue;
-      const chips = [item.kind, item.meta, `相关度 ${item.score || "-"}`].filter(Boolean);
+      const chips = Array.from(new Set([
+        item.kind,
+        item.meta,
+        collectionType,
+        schoolCategory,
+        isWatchOnly ? "Folo定位：不可定位" : "",
+        `相关度 ${item.score || "-"}`,
+      ].filter(Boolean)));
       return `
         <article class="search-result-card intel-card">
           <div class="intel-head">

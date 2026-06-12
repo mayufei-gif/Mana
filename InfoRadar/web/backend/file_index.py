@@ -841,6 +841,9 @@ def row_collection_type(row: dict) -> str:
     trace = str(row.get("source_trace_id") or row.get("来源追踪ID") or "").lower()
     folder = str(row.get("Folo文件夹路径") or "").lower()
     method = str(row.get("采集方式") or row.get("来源类型") or "").lower()
+    feed = str(row.get("订阅源URL") or "")
+    if "watch_" in trace or "watch_updates" in folder or "watch" in method or feed.startswith("watch://"):
+        return "官网观察源"
     if "manual" in trace or "manual_inbox" in folder or "手动" in method:
         return "手动收集"
     if row.get("订阅源URL") or row.get("原始RSS链接") or row.get("实际抓取URL"):
@@ -957,6 +960,7 @@ def latest_intel_items(topic: str = "", limit: int = 50, resolve_folo_links: boo
         has_folo_internal_id = bool(folo_article_url)
         matched_by = "row_id" if direct_folo_article_url else linked_folo.get("matched_by", "")
         collection_type = row_collection_type(row)
+        is_watch_only = collection_type == "官网观察源"
         if has_folo_internal_id:
             folo_internal_count += 1
         if collection_type == "手动收集":
@@ -967,7 +971,7 @@ def latest_intel_items(topic: str = "", limit: int = 50, resolve_folo_links: boo
             source_url_count += 1
         if row.get("原文URL"):
             original_url_count += 1
-        source_url = folo["url"]
+        source_url = "" if is_watch_only else folo["url"]
         items.append(
             {
                 "index": row.get("序号", ""),
@@ -986,15 +990,19 @@ def latest_intel_items(topic: str = "", limit: int = 50, resolve_folo_links: boo
                 "source_file": str(xlsx),
                 "source_row": row.get("序号", ""),
                 "published_at": publication_time_from_row(row),
+                "detected_at": row.get("detected_at", ""),
+                "last_seen_at": row.get("last_seen_at", ""),
+                "is_new": row.get("is_new", ""),
+                "school_category": row.get("school_category", ""),
                 "collection_type": collection_type,
-                "has_folo_internal_id": has_folo_internal_id,
-                "folo_position_status": "可打开 Folo 原条" if has_folo_internal_id else "缺少 Folo 内部条目 ID",
+                "has_folo_internal_id": False if is_watch_only else has_folo_internal_id,
+                "folo_position_status": "官网观察源，不可定位到 Folo 原条" if is_watch_only else ("可打开 Folo 原条" if has_folo_internal_id else "缺少 Folo 内部条目 ID"),
                 "folo_link_matched_by": matched_by,
-                "folo_url": folo_article_url,
-                "folo_article_url": folo_article_url,
+                "folo_url": "" if is_watch_only else folo_article_url,
+                "folo_article_url": "" if is_watch_only else folo_article_url,
                 "folo_search_url": "",
                 "folo_source_url": source_url,
-                "folo_matched": folo["matched"],
+                "folo_matched": False if is_watch_only else folo["matched"],
                 "verify_status": row.get("核验状态", ""),
                 "needs_official_verify": row.get("是否需要官方核验", ""),
             }
@@ -1322,9 +1330,11 @@ def search_record_from_row(
     direct_folo_url = first_value(row, ["folo_article_url", "folo_url"]) or folo_article_url_from_row(row)
     linked_folo = folo_article_link_for_row(row, link_index) if link_index else {"url": "", "matched_by": "", "item": {}}
     source_folo = folo_source_link_for_row(row, source_index) if source_index else {"url": "", "matched_by": "", "item": {}}
-    resolved_folo_url = direct_folo_url or linked_folo.get("url", "") or source_folo.get("url", "")
-    folo_matched_by = "row_id" if direct_folo_url else linked_folo.get("matched_by", "") or source_folo.get("matched_by", "")
-    has_article_folo = bool(direct_folo_url or linked_folo.get("url", ""))
+    collection_type = row_collection_type(row)
+    is_watch_only = collection_type == "官网观察源"
+    resolved_folo_url = "" if is_watch_only else direct_folo_url or linked_folo.get("url", "") or source_folo.get("url", "")
+    folo_matched_by = "" if is_watch_only else "row_id" if direct_folo_url else linked_folo.get("matched_by", "") or source_folo.get("matched_by", "")
+    has_article_folo = False if is_watch_only else bool(direct_folo_url or linked_folo.get("url", ""))
     return {
         "id": record_id,
         "kind": kind,
@@ -1350,6 +1360,11 @@ def search_record_from_row(
             "source_file": str(path),
             "source_file_name": path.name,
             "url": url,
+            "collection_type": collection_type,
+            "school_category": first_value(row, ["school_category"]),
+            "detected_at": first_value(row, ["detected_at"]),
+            "last_seen_at": first_value(row, ["last_seen_at"]),
+            "is_new": first_value(row, ["is_new"]),
             "folo_article_url": resolved_folo_url,
             "folo_link_matched_by": folo_matched_by,
             "folo_article_matched": has_article_folo,
@@ -1624,6 +1639,68 @@ def index_match_score(query: str, record: dict, mode: str = "smart") -> int:
     return score
 
 
+def personal_search_priority(query: str, record: dict) -> int:
+    normalized = " ".join((query or "").strip().split()).lower()
+    if not normalized:
+        return 0
+    haystack = " ".join(
+        [
+            str(record.get("title", "")),
+            str(record.get("body", "")),
+            str(record.get("meta", "")),
+            json.dumps(record.get("payload") or {}, ensure_ascii=False),
+        ]
+    ).lower()
+    school_query = any(
+        term in normalized
+        for term in [
+            "学校",
+            "校园",
+            "学院",
+            "大学",
+            "山西晋中理工",
+            "晋中理工",
+            "sxjzit",
+            "教务",
+            "学工",
+            "团委",
+            "奖学金",
+            "助学金",
+            "入团",
+            "团员",
+            "评优",
+            "评先",
+            "比赛",
+            "竞赛",
+            "挑战杯",
+            "创新创业",
+            "就业",
+            "招聘",
+            "实习",
+            "实践",
+            "毕业",
+        ]
+    )
+    if school_query and any(term in haystack for term in ["山西晋中理工", "晋中理工", "sxjzit", "我的学校"]):
+        return 3
+    job_query = any(term in normalized for term in ["招聘", "就业", "校招", "岗位", "实习"])
+    if job_query and any(term in haystack for term in ["山西焦煤", "霍州煤电", "晋能控股", "潞安", "太重", "山西晋中理工"]):
+        return 2
+    cert_query = any(term in normalized for term in ["证书", "电工证", "技能补贴", "职业技能", "报名"])
+    if cert_query and any(term in haystack for term in ["低压电工", "高压电工", "特种作业", "技能补贴", "山西人社"]):
+        return 2
+    return 0
+
+
+def history_search_sort_key(item: dict) -> tuple[int, float, int, str]:
+    return (
+        int(item.get("_personal_priority", 0) or 0),
+        search_record_timestamp(item),
+        int(item.get("score", 0) or 0),
+        str(item.get("kind", "")),
+    )
+
+
 def search_history_records(query: str, limit: int, offset: int, mode: str = "smart") -> dict:
     if not SEARCH_INDEX_DB.exists():
         build_search_index(force=False)
@@ -1656,9 +1733,10 @@ def search_history_records(query: str, limit: int, offset: int, mode: str = "sma
         }
 
     def scan_records_by_timestamp() -> dict:
-        scan_results: list[dict] = []
+        scan_candidates: list[dict] = []
         scan_matched_count = 0
         scan_has_more = False
+        candidate_limit = max(300, (offset + limit) * 20)
         rows = conn.execute(
             """
             SELECT
@@ -1679,14 +1757,14 @@ def search_history_records(query: str, limit: int, offset: int, mode: str = "sma
             record["score"] = index_match_score(query, {**record, "search_text": search_text}, mode)
             if record["score"] <= 0:
                 continue
-            if scan_matched_count < offset:
-                scan_matched_count += 1
-                continue
-            if len(scan_results) >= limit:
+            record["_personal_priority"] = personal_search_priority(query, record)
+            scan_candidates.append(record)
+            if len(scan_candidates) >= candidate_limit:
                 scan_has_more = True
                 break
-            scan_results.append(record)
-            scan_matched_count += 1
+        scan_candidates.sort(key=history_search_sort_key, reverse=True)
+        scan_results = scan_candidates[offset : offset + limit]
+        scan_matched_count = offset + len(scan_results)
         scan_total = offset + len(scan_results) + (1 if scan_has_more else 0)
         return {"total": scan_total, "results": scan_results, "has_more": scan_has_more, "total_is_estimated": scan_has_more}
 
@@ -1717,12 +1795,10 @@ def search_history_records(query: str, limit: int, offset: int, mode: str = "sma
                 search_text = " ".join([str(row["title"] or ""), str(row["body"] or ""), str(row["meta"] or "")])
                 record["score"] = index_match_score(query, {**record, "search_text": search_text}, mode)
                 if record["score"] > 0:
+                    record["_personal_priority"] = personal_search_priority(query, record)
                     phrase_results.append(record)
             if phrase_results:
-                phrase_results.sort(
-                    key=lambda item: (search_record_timestamp(item), int(item.get("score", 0)), item.get("kind", "")),
-                    reverse=True,
-                )
+                phrase_results.sort(key=history_search_sort_key, reverse=True)
                 sliced = phrase_results[offset : offset + limit]
                 return {
                     "total": len(phrase_results) if len(phrase_results) < phrase_limit else offset + len(sliced) + 1,
@@ -1761,11 +1837,9 @@ def search_history_records(query: str, limit: int, offset: int, mode: str = "sma
                     search_text = " ".join([str(row["title"] or ""), str(row["body"] or ""), str(row["meta"] or "")])
                     record["score"] = index_match_score(query, {**record, "search_text": search_text}, mode)
                     if record["score"] > 0:
+                        record["_personal_priority"] = personal_search_priority(query, record)
                         fts_results.append(record)
-                fts_results.sort(
-                    key=lambda item: (search_record_timestamp(item), int(item.get("score", 0)), item.get("kind", "")),
-                    reverse=True,
-                )
+                fts_results.sort(key=history_search_sort_key, reverse=True)
                 sliced = fts_results[offset : offset + limit]
                 return {
                     "total": offset + len(sliced) + (1 if len(fts_results) > offset + limit or len(fts_rows) >= candidate_limit else 0),
@@ -1787,7 +1861,7 @@ def search_history_records(query: str, limit: int, offset: int, mode: str = "sma
 
 QUERY_EXPANSION_GROUPS = [
     ["政治", "政策", "时政", "政务", "政府", "国务院", "官方公告", "法规", "规划", "补贴", "人社"],
-    ["学校", "校园", "学院", "大学", "山西晋中理工学院", "教务", "奖学金", "助学金", "考试", "就业", "实习"],
+    ["学校", "校园", "学院", "大学", "山西晋中理工学院", "晋中理工", "教务", "学工", "团委", "奖学金", "助学金", "入团", "团员", "评优", "评先", "比赛", "竞赛", "挑战杯", "创新创业", "互联网+", "考试", "就业", "招聘", "实习", "实践", "毕业"],
     ["购物", "消费", "优惠", "折扣", "价格", "补贴", "电商", "京东", "淘宝", "拼多多", "数码", "装备"],
     ["风险", "避坑", "诈骗", "虚假", "隐私", "预警", "提醒", "投诉", "维权"],
     ["网络安全", "安全", "漏洞", "攻击", "隐私", "账号", "数据泄露", "钓鱼", "诈骗"],
@@ -1824,7 +1898,8 @@ def query_terms(query: str, mode: str = "smart") -> dict[str, int]:
                     matched = True
                     break
             if matched:
-                expansion_terms = group[:8] if selected_mode == "smart" else group
+                is_school_group = "山西晋中理工学院" in group
+                expansion_terms = group if selected_mode == "fuzzy" or is_school_group else group[:8]
                 for keyword in expansion_terms:
                     add(keyword, 2 if selected_mode == "smart" else 3)
 
@@ -2018,7 +2093,7 @@ def search_personal_radar(query: str, scope: str = "all", limit: int = 30, offse
             continue
         seen.add(key)
         unique.append(item)
-    unique.sort(key=lambda item: (search_record_timestamp(item), int(item.get("score", 0)), item.get("kind", "")), reverse=True)
+    unique.sort(key=lambda item: (int(item.get("_personal_priority", 0) or 0), search_record_timestamp(item), int(item.get("score", 0)), item.get("kind", "")), reverse=True)
     clipped = unique[:safe_limit] if history_total is not None else unique[safe_offset : safe_offset + safe_limit]
     total = history_total if history_total is not None else len(unique)
     response = {

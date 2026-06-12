@@ -32,6 +32,14 @@ ERROR_DIR = WATCH_DIR / "errors"
 HISTORY_DIR = WATCH_DIR / "history"
 WATCH_REQUESTS = ROOT / "sources" / "watch_only_requests.csv"
 
+CORE_WATCH_REQUESTS = [
+    "山西晋中理工学院 通知 公告 教务 学工 奖学金 入团 竞赛 就业",
+    "山西晋中理工学院 校园招聘 实习 就业 双选会",
+    "山西人社 技能补贴 电工证 职业技能 报名",
+    "山西焦煤 霍州煤电 晋能控股 潞安 太重 招聘 校招 岗位",
+    "PLC 变频器 ABB ACS800 工业机器人 电气维修 控制柜",
+]
+
 UPDATE_HEADERS = [
     "序号",
     "update_id",
@@ -106,6 +114,26 @@ def sha(text: str, length: int = 16) -> str:
     return hashlib.sha1(text.encode("utf-8", errors="ignore")).hexdigest()[:length]
 
 
+def visible_date_from_title(title: str) -> str:
+    text = compact(title)
+    # Some school pages render titles like "12 2025.06 标题", meaning 2025-06-12.
+    match = re.search(r"^\s*(\d{1,2})\s+(20\d{2})[./-](\d{1,2})\b", text)
+    if match:
+        day, year, month = match.groups()
+        try:
+            return f"{int(year):04d}-{int(month):02d}-{int(day):02d}"
+        except ValueError:
+            return ""
+    match = re.search(r"\b(20\d{2})[-/.年](\d{1,2})[-/.月](\d{1,2})", text)
+    if match:
+        year, month, day = match.groups()
+        try:
+            return f"{int(year):04d}-{int(month):02d}-{int(day):02d}"
+        except ValueError:
+            return ""
+    return ""
+
+
 def ensure_dirs() -> None:
     for path in [SNAPSHOT_DIR, UPDATE_DIR, ERROR_DIR, HISTORY_DIR, RETURN_DIR]:
         path.mkdir(parents=True, exist_ok=True)
@@ -116,6 +144,24 @@ def read_csv(path: Path) -> list[dict]:
         return []
     with path.open("r", encoding="utf-8-sig", newline="") as f:
         return list(csv.DictReader(f))
+
+
+def read_watch_requests() -> list[dict]:
+    rows = read_csv(WATCH_REQUESTS)
+    existing = {compact(row.get("关键词", "")) for row in rows}
+    for keyword in CORE_WATCH_REQUESTS:
+        if keyword in existing:
+            continue
+        rows.append(
+            {
+                "task_id": "builtin_core_watch",
+                "关键词": keyword,
+                "状态": "builtin",
+                "创建时间": "",
+                "备注": "核心刚需默认观察词",
+            }
+        )
+    return rows
 
 
 def write_csv(path: Path, headers: list[str], rows: list[dict]) -> None:
@@ -146,16 +192,45 @@ def is_http_url(url: str) -> bool:
 def infer_builtin_sources(keyword: str) -> list[dict]:
     rows: list[dict] = []
     if any(term in keyword for term in ["山西晋中理工", "晋中理工", "奖学金", "入团", "团委", "学工"]):
-        rows.append(
-            {
-                "源名称": "山西晋中理工学院官网",
-                "官网链接": "https://www.sxjzit.edu.cn/",
-                "推荐Folo文件夹": "我的学校/通知公告",
-                "主分类": "我的学校",
-                "推荐原因": "学校官方公开主页，适合作为奖学金、入团、比赛和通知线索入口",
-                "状态": "builtin_watch",
-                "备注": "公开官网，不需要登录",
-            }
+        rows.extend(
+            [
+                {
+                    "源名称": "山西晋中理工学院官网",
+                    "官网链接": "https://www.sxjzit.edu.cn/",
+                    "推荐Folo文件夹": "我的学校/通知公告",
+                    "主分类": "我的学校",
+                    "推荐原因": "学校官方公开主页，适合作为奖学金、入团、比赛和通知线索入口",
+                    "状态": "builtin_watch",
+                    "备注": "公开官网，不需要登录",
+                },
+                {
+                    "源名称": "山西晋中理工学院智慧就业系统",
+                    "官网链接": "https://jygl.sxjzit.edu.cn/",
+                    "推荐Folo文件夹": "我的学校/校园招聘",
+                    "主分类": "我的学校",
+                    "推荐原因": "学校就业系统公开入口，适合作为校园招聘、宣讲会、双选会观察源",
+                    "状态": "builtin_watch",
+                    "备注": "公开官网，不需要登录",
+                },
+                {
+                    "源名称": "山西晋中理工学院职位信息",
+                    "官网链接": "https://jygl.sxjzit.edu.cn/index/index/employjob.html",
+                    "推荐Folo文件夹": "我的学校/校园招聘",
+                    "主分类": "我的学校",
+                    "推荐原因": "学校就业系统职位页面，适合跟踪岗位、实习、校园招聘",
+                    "状态": "builtin_watch",
+                    "备注": "公开官网，不需要登录",
+                },
+                {
+                    "源名称": "山西晋中理工学院人力资源通知公告",
+                    "官网链接": "https://xtrlzyyfzghc.sxjzit.edu.cn/tongzhigonggao.html",
+                    "推荐Folo文件夹": "我的学校/通知公告",
+                    "主分类": "我的学校",
+                    "推荐原因": "学校人力资源公开通知公告入口",
+                    "状态": "builtin_watch",
+                    "备注": "公开官网，不需要登录",
+                },
+            ]
         )
     return rows
 
@@ -244,7 +319,7 @@ def parse_items(html: str, source_url: str, keyword: str) -> list[dict]:
             continue
         url = urljoin(source_url, link.get("href", ""))
         item_hash = sha(f"{title}|{url}", 20)
-        items.append({"title": title, "url": url, "published_at": "", "summary": title, "hash": item_hash})
+        items.append({"title": title, "url": url, "published_at": visible_date_from_title(title), "summary": title, "hash": item_hash})
     if not items:
         page_title = compact(parser.page_title) or source_url
         title = f"{keyword} 监控源快照：{page_title}"
@@ -282,8 +357,8 @@ def write_snapshot(watch_id: str, snapshot: dict) -> None:
 
 
 def broad_category(keyword: str, source_row: dict) -> str:
-    text = f"{keyword} {source_row.get('主分类', '')} {source_row.get('推荐Folo文件夹', '')}"
-    if any(word in text for word in ["山西晋中理工", "学校", "教务", "学工", "团委", "奖学金", "入团", "评优", "比赛", "竞赛"]):
+    text = f"{keyword} {source_row.get('源名称', '')} {source_row.get('官网链接', '')} {source_row.get('主分类', '')} {source_row.get('推荐Folo文件夹', '')}"
+    if any(word in text for word in ["山西晋中理工", "晋中理工", "sxjzit.edu.cn"]):
         return "我的学校"
     if any(word in text for word in ["招聘", "校招", "岗位"]):
         return "就业招聘"
@@ -309,6 +384,7 @@ def update_row(keyword: str, source_row: dict, item: dict, watch_id: str, first_
         "url": item.get("url", ""),
         "published_at": item.get("published_at", ""),
         "detected_at": detected,
+        "last_seen_at": detected,
         "broad_category": broad,
         "source_layer": source_layer,
         "decision_scope": decision_scope,
@@ -321,7 +397,7 @@ def update_row(keyword: str, source_row: dict, item: dict, watch_id: str, first_
 
 def run_watch(timeout: int = 10) -> dict:
     ensure_dirs()
-    requests = read_csv(WATCH_REQUESTS)
+    requests = read_watch_requests()
     all_updates: list[dict] = []
     errors: list[dict] = []
     checked = 0
