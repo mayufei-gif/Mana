@@ -105,14 +105,11 @@ def save_state(path: Path, state: dict) -> None:
     tmp.replace(path)
 
 
-def write_handoff(outbox: Path, message: dict, bridge_id: str) -> Path:
-    outbox.mkdir(parents=True, exist_ok=True)
+def build_handoff_body(message: dict, bridge_id: str) -> str:
     message_id = str(message.get("message_id") or "message")
     task_id = str(message.get("task_id") or "")
     session_id = str(message.get("session_id") or "")
-    filename = f"{datetime.now(timezone.utc).strftime('%Y%m%d-%H%M%S')}-{message_id}.md"
-    path = outbox / filename
-    body = f"""# AgentHub -> Windows Codex App Handoff
+    return f"""# AgentHub -> Windows Codex App Handoff
 
 bridge_id: {bridge_id}
 message_id: {message_id}
@@ -146,8 +143,16 @@ Codex App 回复后，把回复保存为文本文件，然后运行：
 python "{Path(__file__).resolve()}" reply --session-id "{session_id}" --in-reply-to "{message_id}" --task-id "{task_id}" --file "回复文件路径.txt"
 ```
 """
+
+
+def write_handoff(outbox: Path, message: dict, bridge_id: str) -> tuple[Path, str]:
+    outbox.mkdir(parents=True, exist_ok=True)
+    message_id = str(message.get("message_id") or "message")
+    filename = f"{datetime.now(timezone.utc).strftime('%Y%m%d-%H%M%S')}-{message_id}.md"
+    path = outbox / filename
+    body = build_handoff_body(message, bridge_id)
     path.write_text(body, encoding="utf-8")
-    return path
+    return path, body
 
 
 def cmd_status(args: argparse.Namespace) -> int:
@@ -196,7 +201,7 @@ def poll_once(args: argparse.Namespace) -> int:
         message_id = str(message.get("message_id") or "")
         if not message_id or message_id in seen:
             continue
-        handoff_path = write_handoff(Path(args.outbox).expanduser(), message, args.bridge_id)
+        handoff_path, handoff_body = write_handoff(Path(args.outbox).expanduser(), message, args.bridge_id)
         client.post(
             f"/api/agenthub/bridge/messages/{urllib.parse.quote(message_id)}/status",
             {
@@ -205,6 +210,7 @@ def poll_once(args: argparse.Namespace) -> int:
                 "bridge_status": "handoff-ready",
                 "bridge_id": args.bridge_id,
                 "handoff_path": str(handoff_path),
+                "handoff_content": handoff_body,
                 "note": "Windows Bridge generated manual handoff because Codex App app-server/thread API is not bound.",
             },
         )

@@ -1,21 +1,28 @@
 {
   "system_name": "Mana AI 公司总控系统",
-  "updated_at": "2026-06-11T00:00:00+08:00",
-  "current_phase": "正在建设 ChatGPT 总管 + AgentHub MCP Server + Windows API Codex App Agent + Hermes 长期记忆层",
-  "active_focus": "优先完成 AgentHub MCP Server、Hermes Bootstrap、Windows API Codex App Agent 会话绑定与消息转发",
-  "next_best_action": "在 GPT 应用中配置 https://inforadar.mana-mana.top/mcp 后，验证 list_agents、list_sessions、send_message_to_session 和 read_session_messages",
+  "updated_at": "2026-06-12T11:46:00+08:00",
+  "current_phase": "阶段 1A-1E 已完成：ChatGPT 主主管入口、MCP 15 工具发现、Task Room、supervisor-agent、@ 路由、OpenClaw 路由、Ubuntu Codex CLI 路由、附件上传与 attachment_ids 轻量附件调度均已通过；阶段 1F Windows Codex App 私有窗口自动投递未完成",
+  "active_focus": "开始单独研究阶段 1F：Windows Codex App 私有窗口自动投递，优先寻找 Codex App app-server/thread API，避免脆弱鼠标键盘自动化",
+  "next_best_action": "只读梳理 Windows Codex App 本机 app-server/thread API、现有 Bridge handoff 文件和 default appThreadContexts；确认能否把 AgentHub 队列任务自动投递到指定 Codex App 文件夹/会话",
   "important_decisions": [
+    "主入口正式定为 ChatGPT 总管，OpenClaw 降级为可选微信入口",
+    "中台保持 AgentHub Supervisor + Hermes + Task Room，不把长期状态依赖在 ChatGPT 单个对话里",
     "Windows API Codex App Agent 是当前 Windows 主力 Agent",
     "Windows API Codex App Agent 与 Windows GPT Codex App Agent 路径可能相同，但对应不同会话，必须通过 session_id 区分",
     "任务分发必须绑定 agent_id + session_id + workspace_path",
+    "已新增 supervisor-agent 和 session-supervisor-main-001，@主管 不再只是前端虚拟入口",
+    "已新增 Task Room 协议，任务房间消息写入 logs/TASK_ROOM_MESSAGES.ndjson",
+    "已新增 @ 提及路由，@openclaw、@windows-api-codex、@windows-gpt-codex、@ubuntu-codex-cli 和 @session-* 会解析到 AgentHub session 或主管调度",
+    "已新增附件上传协议和 attachment_ids 轻量调度协议，附件存储在 uploads/，GPT 只传 attachment_id，AgentHub 服务端展开为 attachments",
     "优先使用 app-server / SDK / Bridge，不优先使用鼠标键盘 UI 自动化",
-    "第一阶段 send_message_to_session 只写入 AgentHub 队列和日志，delivery=bridge-pending，不假装已控制 Codex App 私有窗口"
+    "阶段 1F：真实 Codex App 私有窗口自动投递仍未完成，不声明主管已能直接控制 Windows Codex App 真实聊天窗口"
   ],
   "risk_notes": [
     "不要把全部历史聊天塞进上下文",
     "不要只按路径判断 Agent",
     "API Agent 必须处理 429 限流",
     "Windows Codex App 自动控制必须先验证 app-server 能力",
-    "MCP 公网入口必须带 token 或登录鉴权"
+    "MCP 公网入口必须带 token 或登录鉴权",
+    "如果 ChatGPT 侧仍只显示旧 10 个 MCP 工具，优先按 GPT 应用/连接器工具发现缓存处理：刷新 Action/MCP 配置或新建 GPT 应用重新发现工具"
   ]
 }

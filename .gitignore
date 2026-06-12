@@ -26,6 +26,8 @@ NASAgentHub/logs/
 NASAgentHub/secrets/
 NASAgentHub/previews/
 NASAgentHub/workspaces/
+NASAgentHub/bridges/windows_codex_app_bridge/bridge_state.json
+NASAgentHub/bridges/windows_codex_app_bridge/outbox/
 CourseMindNAS/CourseMind/
 CourseMindNAS/storage/
 CourseMindNAS/config/

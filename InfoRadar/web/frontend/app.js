@@ -13,12 +13,14 @@ const OPENCLAW_TARGETS_KEY = "mana_openclaw_custom_targets_v1";
 const OPENCLAW_SELF_CHECK_LOG_KEY = "mana_openclaw_selfcheck_log_v1";
 const OPENCLAW_BASE_TARGETS = ["codexapp", "codexapp1", "codexapp2", "codexapp3"];
 const OPENCLAW_BASE_THREAD_TARGET = "codexapp1";
+const NAS_ADMIN_URL = "https://100.78.3.45:9443";
 const WEB_TAB_NONCE_KEY = "inforadar_web_tab_nonce_v1";
 const LEGACY_WEB_TOKEN_KEY = "inforadar_web_token";
 const FOLO_SOURCE_TIMELINE_KEY = "folo_hive_source_timeline_v1";
 const FOLO_MANUAL_ENTRIES_KEY = "folo_hive_manual_entries_v1";
 const FOLO_RESOURCE_POOL_KEY = "folo_hive_resource_pool_v1";
 const FOLO_INSPECTION_INTERVAL_KEY = "folo_hive_inspection_interval_v1";
+const AGENTHUB_SUPERVISOR_SESSION_ID = "agenthub-supervisor";
 const OPENCLAW_COMMAND_PRESETS = [
   {
     name: "主管待定",
@@ -129,6 +131,12 @@ const state = {
   tabBound: true,
   agenthub: null,
   selectedAgentId: "",
+  selectedAgentHubSessionId: "",
+  selectedAgentHubMode: "session",
+  selectedAgentHubTaskRoomId: "",
+  agenthubDraftText: {},
+  agenthubDraftAttachments: {},
+  agenthubSending: false,
   agentRefreshTimer: null,
   headerCollapseTimer: null,
   lastHeaderScrollY: 0,
@@ -184,6 +192,16 @@ const state = {
       active: true,
       publicHostname: "/coursemind/",
       actionText: "进入学习库",
+    },
+    {
+      id: "NasAdminConsole",
+      name: "NAS 管理台",
+      status: "在线",
+      description: "DXP-4800 管理页面，使用已验证可通的尾网地址 100.78.3.45:9443，避免跳到不可达的 192.168.1.87。",
+      accent: "amber",
+      active: true,
+      publicHostname: NAS_ADMIN_URL,
+      actionText: "打开 NAS",
     },
     {
       id: "nas-pipeline",
@@ -521,7 +539,7 @@ function setRoute(route, updateHash = true) {
 
 function renderProjects() {
   const box = $("#projectGrid");
-  const rows = state.agenthub?.projects?.length
+  let rows = state.agenthub?.projects?.length
     ? state.agenthub.projects.map((project) => ({
         id: project.project_id,
         name:
@@ -565,6 +583,21 @@ function renderProjects() {
                       : "预留位",
       }))
     : state.projects;
+  if (!rows.some((project) => project.id === "NasAdminConsole" || project.project_id === "NasAdminConsole")) {
+    rows = [
+      ...rows,
+      {
+        id: "NasAdminConsole",
+        name: "NAS 管理台",
+        status: "在线",
+        description: "DXP-4800 管理页面，使用已验证可通的尾网地址 100.78.3.45:9443，避免跳到不可达的 192.168.1.87。",
+        publicHostname: NAS_ADMIN_URL,
+        accent: "amber",
+        active: true,
+        actionText: "打开 NAS",
+      },
+    ];
+  }
   $("#projectCount").textContent = String(rows.length);
   $("#onlineCount").textContent = String(rows.filter((item) => item.active).length);
   box.innerHTML = rows
@@ -608,6 +641,9 @@ function renderProjects() {
         const url = button.dataset.url || "/coursemind/";
         window.location.assign(url);
         showToast("正在打开 CourseMind 学习库");
+      } else if (target === "NasAdminConsole") {
+        window.open(button.dataset.url || NAS_ADMIN_URL, "_blank", "noopener,noreferrer");
+        showToast("正在打开 NAS 管理台");
       } else {
         showToast("这个项目位已经预留，后续可以接入");
       }
@@ -631,6 +667,16 @@ function statusText(value) {
     planned: "规划",
     online: "在线",
     mvp: "MVP",
+    "bridge-pending": "等待 Bridge",
+    "handoff-ready": "交接就绪",
+    "manual-handoff": "人工交接",
+    "manual-copied": "已复制",
+    "manual-reply": "人工回填",
+    "codex-replied": "Codex 已回填",
+    "app-server-delivered": "App Server 已投递",
+    "app-server-replied": "App Server 已回复",
+    replied: "已回复",
+    received: "已接收",
   };
   return map[value] || value || "未知";
 }
@@ -820,13 +866,325 @@ function renderAgentDetail(agent) {
   `;
 }
 
-function selectAgent(agentId, scroll = true) {
-  state.selectedAgentId = agentId || "";
-  const agent = (state.agenthub?.agents || []).find((item) => item.agent_id === state.selectedAgentId);
-  renderAgentHub(state.agenthub || { projects: [], tasks: [], agents: [] });
-  if (scroll && agent) {
-    $("#agentDetailPanel")?.scrollIntoView({ behavior: "smooth", block: "start" });
+function selectAgentHubSession(sessionId, scroll = false) {
+  state.selectedAgentHubMode = "session";
+  state.selectedAgentHubSessionId = sessionId || "";
+  renderAgentHubSessions(state.agenthub || {});
+  if (scroll) {
+    $("#agentSessionDetail")?.scrollIntoView({ behavior: "smooth", block: "start" });
   }
+}
+
+function agentHubSessionMessages(sessionId) {
+  return (state.agenthub?.session_messages || []).filter((item) => item.session_id === sessionId);
+}
+
+function selectAgentHubTaskRoom(roomId, scroll = false) {
+  state.selectedAgentHubMode = "room";
+  state.selectedAgentHubTaskRoomId = roomId || "";
+  renderAgentHubSessions(state.agenthub || {});
+  if (scroll) {
+    $("#agentSessionDetail")?.scrollIntoView({ behavior: "smooth", block: "start" });
+  }
+}
+
+function agentHubTaskRoomMessages(roomId) {
+  return (state.agenthub?.task_room_messages || []).filter((item) => item.room_id === roomId);
+}
+
+function agentHubDraftKey(type, id) {
+  return `${type}:${id || ""}`;
+}
+
+function latestAgentHubHandoff(messages) {
+  return (messages || []).slice().reverse().find((item) => item.handoff_path || item.handoff_content || item.delivery === "manual-handoff");
+}
+
+function agentHubHandoffText(message) {
+  if (!message) return "";
+  return (
+    message.handoff_content ||
+    `AgentHub Handoff\n\nmessage_id: ${message.message_id || ""}\ntask_id: ${message.task_id || ""}\nsession_id: ${message.session_id || ""}\nagent_id: ${message.agent_id || ""}\n\n${message.content || ""}`
+  );
+}
+
+function agentHubDisplaySessions(data) {
+  const sessions = Array.isArray(data.sessions) ? data.sessions : [];
+  const hasSupervisor = sessions.some((session) => {
+    const text = `${session.session_id || ""} ${session.display_name || ""} ${session.agent_id || ""}`.toLowerCase();
+    return text.includes("supervisor") || text.includes("hermes") || text.includes("主管");
+  });
+  if (hasSupervisor) return sessions;
+  return [
+    {
+      session_id: AGENTHUB_SUPERVISOR_SESSION_ID,
+      display_name: "主管",
+      agent_id: "agenthub-supervisor",
+      login_type: "router",
+      status: "planned",
+      project_id: "AgentHub",
+      control_level: "dispatch",
+      virtual: true,
+    },
+    ...sessions,
+  ];
+}
+
+function agentHubDraftFiles(sessionId) {
+  return state.agenthubDraftAttachments[sessionId] || [];
+}
+
+function formatAgentHubFileSize(size) {
+  const value = Number(size) || 0;
+  if (value < 1024) return `${value} B`;
+  if (value < 1024 * 1024) return `${(value / 1024).toFixed(1)} KB`;
+  return `${(value / 1024 / 1024).toFixed(1)} MB`;
+}
+
+function agentHubSessionHandle(session) {
+  const text = `${session.session_id || ""} ${session.display_name || ""} ${session.agent_id || ""}`.toLowerCase();
+  if (session.virtual || session.session_id === AGENTHUB_SUPERVISOR_SESSION_ID) return "@主管";
+  if (text.includes("openclaw") || text.includes("wechat")) return "@openclaw";
+  if (text.includes("windows-api-codex")) return "@windows-api-codex";
+  if (text.includes("windows-gpt-codex")) return "@windows-gpt-codex";
+  if (text.includes("ubuntu") || text.includes("cli")) return "@ubuntu-codex-cli";
+  if (text.includes("gpt")) return "@gpt";
+  return `@${session.agent_id || session.session_id || "agent"}`;
+}
+
+function agentHubGroupLabel(session) {
+  const text = `${session.session_id || ""} ${session.display_name || ""} ${session.agent_id || ""} ${session.host || ""}`.toLowerCase();
+  if (session.virtual || session.session_id === AGENTHUB_SUPERVISOR_SESSION_ID) return "总管";
+  if (text.includes("openclaw") || text.includes("wechat")) return "OpenClaw 微信入口";
+  if (text.includes("windows") || text.includes("win-")) return "Windows Codex App";
+  if (text.includes("ubuntu") || text.includes("cli")) return "Ubuntu Codex CLI";
+  if (text.includes("gpt")) return "GPT 应用";
+  return session.host || session.login_type || "其它会话";
+}
+
+function agentHubMessageClass(message) {
+  const role = String(message.role || "").toLowerCase();
+  if (["supervisor", "user", "human"].includes(role)) return "user";
+  if (["codex", "assistant", "agent"].includes(role)) return "assistant";
+  return "event";
+}
+
+function agentHubMessageLabel(message) {
+  const role = String(message.role || "message").toLowerCase();
+  if (role === "supervisor") return "主管";
+  if (role === "codex") return "Codex";
+  if (role === "user") return "你";
+  return role;
+}
+
+function renderAgentHubTreeNode(node, depth = 0) {
+  const type = node.type || "item";
+  const id = node.id || node.session_id || node.room_id || "";
+  const children = Array.isArray(node.children) ? node.children : [];
+  const isSession = type === "session";
+  const isRoom = type === "task-room";
+  const isThread = type === "codex-app-thread";
+  const active =
+    (isSession && state.selectedAgentHubMode === "session" && node.session_id === state.selectedAgentHubSessionId) ||
+    (isRoom && state.selectedAgentHubMode === "room" && node.room_id === state.selectedAgentHubTaskRoomId);
+  const attrs = isSession
+    ? `data-agenthub-session="${escapeHtml(node.session_id || id)}"`
+    : isRoom
+      ? `data-agenthub-room="${escapeHtml(node.room_id || id)}"`
+      : isThread
+        ? `data-agenthub-thread="${escapeHtml(node.thread_id || id)}"`
+        : "";
+  const button = `
+    <button class="agenthub-tree-node depth-${Math.min(depth, 3)} ${active ? "selected" : ""} type-${escapeHtml(type)}" type="button" ${attrs}>
+      <span class="agenthub-tree-label">${escapeHtml(node.label || id || type)}</span>
+      ${node.status ? `<small>${escapeHtml(statusText(node.status))}</small>` : ""}
+      ${node.summary ? `<em>${escapeHtml(node.summary)}</em>` : ""}
+    </button>
+  `;
+  return `
+    <div class="agenthub-tree-branch">
+      ${button}
+      ${children.length ? `<div class="agenthub-tree-children">${children.map((child) => renderAgentHubTreeNode(child, depth + 1)).join("")}</div>` : ""}
+    </div>
+  `;
+}
+
+function renderAgentHubSidebarTree(data) {
+  const treeItems = data.sidebar_tree?.items || [];
+  if (!treeItems.length) {
+    return `<div class="agenthub-empty-state">暂无 Agent 树</div>`;
+  }
+  return `
+    <div class="agenthub-tree-toolbar">
+      <button class="ghost small" type="button" data-agenthub-create-room="1">新建任务房间</button>
+    </div>
+    <div class="agenthub-tree-root">
+      ${treeItems.map((node) => renderAgentHubTreeNode(node)).join("")}
+    </div>
+  `;
+}
+
+function renderAgentHubMessages(target, messages, mode = "session") {
+  if (target.virtual) {
+    return `
+      <div class="codex-message event">
+        <div class="codex-message-top"><span>系统 · 待绑定</span><span></span></div>
+        <div class="codex-message-text">这个入口还没有绑定可发送的 AgentHub session。</div>
+      </div>
+    `;
+  }
+  if (!messages.length) {
+    return `
+      <div class="codex-message event">
+        <div class="codex-message-top"><span>系统 · 空会话</span><span></span></div>
+        <div class="codex-message-text">暂无消息。</div>
+      </div>
+    `;
+  }
+  return messages
+    .map((message) => {
+      const hasHandoff = message.handoff_path || message.handoff_content || message.delivery === "manual-handoff";
+      const routed = Array.isArray(message.routed_to) && message.routed_to.length
+        ? `<div class="agenthub-route-strip">已分发：${message.routed_to.map((item) => escapeHtml(item.session_id || item.agent_id || item.mention || "")).filter(Boolean).join("、")}</div>`
+        : "";
+      const files = Array.isArray(message.attachments) && message.attachments.length
+        ? `<div class="agenthub-message-files">${message.attachments.map((file) => `<span>${escapeHtml(file.filename || file.name || "附件")}</span>`).join("")}</div>`
+        : "";
+      return `
+        <div class="codex-message ${escapeHtml(agentHubMessageClass(message))}">
+          <div class="codex-message-top">
+            <span>${escapeHtml(agentHubMessageLabel(message))} · ${escapeHtml(statusText(message.status))} · ${escapeHtml(statusText(message.delivery))}</span>
+            <span>${escapeHtml(message.created_at || "")}</span>
+          </div>
+          <div class="codex-message-text">${escapeHtml(message.content || "")}</div>
+          ${routed}
+          ${files}
+          ${message.handoff_path ? `<div class="codex-message-text"><code>${escapeHtml(message.handoff_path)}</code></div>` : ""}
+          ${
+            hasHandoff
+              ? `<div class="agenthub-message-actions"><button class="ghost small" type="button" data-agenthub-copy-handoff="${escapeHtml(message.message_id || "")}">复制交接</button></div>`
+              : ""
+          }
+        </div>
+      `;
+    })
+    .join("");
+}
+
+function renderAgentHubComposer(target, mode = "session") {
+  const targetId = mode === "room" ? target.room_id || "" : target.session_id || "";
+  const key = agentHubDraftKey(mode, targetId);
+  const draftText = state.agenthubDraftText[key] || "";
+  const draftFiles = agentHubDraftFiles(key);
+  const disabled = target.virtual ? "disabled" : "";
+  const fileRows = draftFiles.length
+    ? draftFiles
+        .map(
+          (file, index) => `
+            <span class="agenthub-file-chip">
+              <span>${escapeHtml(file.name || "未命名文件")} · ${escapeHtml(formatAgentHubFileSize(file.size))}</span>
+              <button type="button" data-agenthub-remove-file="${escapeHtml(String(index))}" data-agenthub-file-target="${escapeHtml(key)}" aria-label="移除附件">×</button>
+            </span>
+          `
+        )
+        .join("")
+    : "";
+  return `
+    <form class="agenthub-chat-composer" data-agenthub-message-target="${escapeHtml(targetId)}" data-agenthub-message-mode="${escapeHtml(mode)}">
+      <div class="agenthub-draft-files ${draftFiles.length ? "" : "empty"}">${fileRows}</div>
+      <div class="agenthub-composer-row">
+        <button class="agenthub-icon-button" type="button" data-agenthub-attach="1" title="添加文件" ${disabled}>+</button>
+        <input class="agenthub-file-input" data-agenthub-file-input="${escapeHtml(key)}" type="file" multiple ${disabled} />
+        <textarea data-agenthub-draft-input="${escapeHtml(key)}" rows="2" placeholder="${mode === "room" ? "@主管、@openclaw、@ubuntu-codex-cli 协同调度" : "@主管、@openclaw 或直接输入任务"}" ${disabled}>${escapeHtml(draftText)}</textarea>
+        <button type="submit" ${disabled || state.agenthubSending ? "disabled" : ""}>发送</button>
+      </div>
+      ${
+        draftFiles.length
+          ? `<div class="agenthub-composer-note">发送前会上传附件，并写入 AgentHub 消息协议。</div>`
+          : ""
+      }
+    </form>
+  `;
+}
+
+function renderAgentHubSessions(data) {
+  const wall = $("#agentSessionWall");
+  const detail = $("#agentSessionDetail");
+  if (!wall || !detail) return;
+  const sessions = agentHubDisplaySessions(data);
+  const rooms = data.task_rooms || [];
+  const realSessions = sessions.filter((session) => !session.virtual);
+  if (!state.selectedAgentHubSessionId && realSessions.length) {
+    state.selectedAgentHubSessionId = realSessions[0]?.session_id || sessions[0].session_id || "";
+  }
+  if (state.selectedAgentHubSessionId && !sessions.some((session) => session.session_id === state.selectedAgentHubSessionId)) {
+    state.selectedAgentHubSessionId = realSessions[0]?.session_id || sessions[0]?.session_id || "";
+  }
+  if (state.selectedAgentHubTaskRoomId && !rooms.some((room) => room.room_id === state.selectedAgentHubTaskRoomId)) {
+    state.selectedAgentHubTaskRoomId = rooms[0]?.room_id || "";
+  }
+  wall.innerHTML = renderAgentHubSidebarTree(data);
+
+  if (state.selectedAgentHubMode === "room") {
+    const room = rooms.find((item) => item.room_id === state.selectedAgentHubTaskRoomId) || rooms[0];
+    if (!room) {
+      detail.innerHTML = `<div class="agenthub-empty-state">还没有任务房间。</div>`;
+      return;
+    }
+    state.selectedAgentHubTaskRoomId = room.room_id || "";
+    const roomMessages = agentHubTaskRoomMessages(room.room_id).slice(-120);
+    detail.innerHTML = `
+      <header class="agenthub-chat-header">
+        <div>
+          <p class="eyebrow">Task Room</p>
+          <h3>${escapeHtml(room.title || room.room_id)}</h3>
+          <div class="agenthub-chat-meta">
+            <span>${escapeHtml(room.room_id)}</span>
+            <span>${escapeHtml(statusText(room.status))}</span>
+            <span>${escapeHtml((room.participants || []).join("、") || "等待参与者")}</span>
+          </div>
+        </div>
+        <div class="agenthub-chat-side-meta">
+          <span>${escapeHtml((room.related_task_ids || []).length ? `${room.related_task_ids.length} 个任务` : "暂无任务")}</span>
+        </div>
+      </header>
+      <div class="agenthub-message-list">
+        ${renderAgentHubMessages(room, roomMessages, "room")}
+      </div>
+      ${renderAgentHubComposer(room, "room")}
+    `;
+    return;
+  }
+
+  const session = sessions.find((item) => item.session_id === state.selectedAgentHubSessionId);
+  if (!session) {
+    detail.innerHTML = `<div class="agenthub-empty-state">选择一个会话。</div>`;
+    return;
+  }
+  const messages = agentHubSessionMessages(session.session_id).slice(-80);
+  const latestHandoff = latestAgentHubHandoff(messages);
+  detail.innerHTML = `
+    <header class="agenthub-chat-header">
+      <div>
+        <p class="eyebrow">${escapeHtml(agentHubSessionHandle(session))}</p>
+        <h3>${escapeHtml(session.display_name || session.session_id)}</h3>
+        <div class="agenthub-chat-meta">
+          <span>${escapeHtml(session.session_id)}</span>
+          <span>${escapeHtml(session.agent_id || "未绑定")}</span>
+          <span>${escapeHtml(statusText(session.status))}</span>
+          <span>${escapeHtml(session.control_level || "未声明控制级别")}</span>
+        </div>
+      </div>
+      <div class="agenthub-chat-side-meta">
+        <span>${escapeHtml(session.thread_ref || "pending-bind")}</span>
+        <span>${escapeHtml(latestHandoff ? statusText(latestHandoff.status || latestHandoff.delivery) : "无待复制交接")}</span>
+      </div>
+    </header>
+    <div class="agenthub-message-list">
+      ${renderAgentHubMessages(session, messages, "session")}
+    </div>
+    ${renderAgentHubComposer(session, "session")}
+  `;
 }
 
 function renderAgentHub(data) {
@@ -835,14 +1193,10 @@ function renderAgentHub(data) {
   renderProjects();
 
   const projects = data.projects || [];
-  const tasks = (data.tasks || []).slice(0, 10);
   const agents = data.agents || [];
-  if (state.selectedAgentId && !agents.some((agent) => agent.agent_id === state.selectedAgentId)) {
-    state.selectedAgentId = "";
-  }
   $("#agentProjectCount").textContent = String(projects.length);
-  $("#agentTaskCount").textContent = String(data.tasks?.length || 0);
-  $("#agentRoleCount").textContent = String(agents.length);
+  $("#agentTaskCount").textContent = String(data.sessions?.length || 0);
+  $("#agentRoleCount").textContent = String(data.session_messages?.length || 0);
   $("#agentHubProjectList").innerHTML = projects.length
     ? projects
         .map(
@@ -859,49 +1213,43 @@ function renderAgentHub(data) {
         .join("")
     : `<div class="item"><div class="item-meta">暂无项目注册记录</div></div>`;
 
-  $("#taskBoard").innerHTML = tasks.length
-    ? tasks
-        .map(
-          (task) => `
-            <div class="item">
-              <div class="item-title">${escapeHtml(task.task_id)} · ${escapeHtml(task.title)}</div>
-              <div class="item-meta">
-                项目：${escapeHtml(task.project_id)} · 负责人：${escapeHtml(task.owner_agent)} · 状态：${escapeHtml(statusText(task.status))} · 优先级：${escapeHtml(task.priority)}
-              </div>
-            </div>
-          `
-        )
-        .join("")
-    : `<div class="item"><div class="item-meta">暂无任务</div></div>`;
+  renderAgentHubSessions(data);
+}
 
-  $("#agentStatus").innerHTML = agents.length
-    ? agents
-        .map(
-          (agent) => `
-            <div class="item agent-status-card ${escapeHtml(realtimeClass(agent))} ${agent.agent_id === state.selectedAgentId ? "selected" : ""}" data-agent-id="${escapeHtml(agent.agent_id)}" role="button" tabindex="0">
-              <div class="item-title">
-                ${escapeHtml(agent.agent_id)}
-                <span class="realtime-pill ${escapeHtml(realtimeClass(agent))}">${escapeHtml(realtimeText(agent))}</span>
-              </div>
-              <div class="item-meta">
-                登记状态：${escapeHtml(statusText(agent.declared_status || agent.status))} · 角色：${escapeHtml(agent.role)}
-              </div>
-              <div class="item-meta">
-                当前任务：${escapeHtml(agent.current_task_id || "无")} · 下一步：${escapeHtml(agent.next_action || "等待")}
-              </div>
-              <div class="item-meta">
-                Codex会话：${escapeHtml(agent.codex_thread_title || "未同步")} · ${escapeHtml(codexThreadText(agent.codex_thread || {}))}
-              </div>
-              <div class="item-meta">
-                最后心跳：${escapeHtml(agent.heartbeat_at || "无")} · 来源：${escapeHtml(agent.heartbeat_source || "未登记")}
-              </div>
-              <div class="agent-card-action">点开查看 Codex App 真实会话摘要</div>
-            </div>
-          `
-        )
-        .join("")
-    : `<div class="item"><div class="item-meta">暂无角色状态</div></div>`;
-  renderAgentDetail(agents.find((agent) => agent.agent_id === state.selectedAgentId));
+function readFileAsBase64(file) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => {
+      const result = String(reader.result || "");
+      resolve(result.includes(",") ? result.split(",").pop() : result);
+    };
+    reader.onerror = () => reject(reader.error || new Error("附件读取失败"));
+    reader.readAsDataURL(file);
+  });
+}
+
+async function uploadAgentHubDraftFiles(files) {
+  const attachments = [];
+  for (const item of files || []) {
+    if (!item.file) {
+      if (item.attachment_id) attachments.push(item);
+      continue;
+    }
+    const contentBase64 = await readFileAsBase64(item.file);
+    const data = await api("/api/agenthub/attachments/upload", {
+      method: "POST",
+      body: JSON.stringify({
+        filename: item.name,
+        mime: item.type || "application/octet-stream",
+        content_base64: contentBase64,
+      }),
+    });
+    if (!data?.attachment) {
+      throw new Error(`附件上传失败：${item.name}`);
+    }
+    attachments.push(data.attachment);
+  }
+  return attachments;
 }
 
 function renderFiles(target, files, limit = 20) {
@@ -2456,8 +2804,8 @@ async function loadAgentHub() {
   if (data.ok) {
     renderAgentHub(data);
   } else {
-    $("#taskBoard").innerHTML = `<div class="item"><div class="item-meta">${escapeHtml(data.error || "AgentHub 未连接")}</div></div>`;
-    $("#agentStatus").innerHTML = `<div class="item"><div class="item-meta">等待 AgentHub 初始化</div></div>`;
+    $("#agentSessionWall").innerHTML = `<div class="item"><div class="item-meta">等待 AgentHub 初始化</div></div>`;
+    $("#agentSessionDetail").innerHTML = `<div class="item"><div class="item-meta">等待会话注册表</div></div>`;
   }
 }
 
@@ -3170,16 +3518,167 @@ function bindProjectShell() {
     $("#locatorPanel")?.classList.add("hidden");
   });
   document.addEventListener("click", (event) => {
-    const card = event.target.closest(".agent-status-card[data-agent-id]");
-    if (!card) return;
-    selectAgent(card.dataset.agentId || "", true);
+    const copyButton = event.target.closest("button[data-agenthub-copy-handoff]");
+    if (copyButton) {
+      const messageId = copyButton.dataset.agenthubCopyHandoff || "";
+      const message = (state.agenthub?.session_messages || []).find((item) => item.message_id === messageId);
+      if (!message) {
+        showToast("没有可复制的 handoff");
+        return;
+      }
+      copyText(agentHubHandoffText(message))
+        .then(async () => {
+          if (messageId) {
+            await api(`/api/agenthub/messages/${encodeURIComponent(messageId)}/manual-copied`, { method: "POST", body: JSON.stringify({}) });
+            await loadAgentHub();
+          }
+          showToast("交接内容已复制并标记 manual-copied");
+        })
+        .catch((err) => showToast(err.message));
+      return;
+    }
+    const removeFileButton = event.target.closest("button[data-agenthub-remove-file]");
+    if (removeFileButton) {
+      const targetKey = removeFileButton.dataset.agenthubFileTarget || "";
+      const index = Number(removeFileButton.dataset.agenthubRemoveFile);
+      const files = agentHubDraftFiles(targetKey).slice();
+      if (Number.isInteger(index)) {
+        files.splice(index, 1);
+        state.agenthubDraftAttachments[targetKey] = files;
+        renderAgentHubSessions(state.agenthub || {});
+      }
+      return;
+    }
+    const createRoomButton = event.target.closest("button[data-agenthub-create-room]");
+    if (createRoomButton) {
+      const title = window.prompt("任务房间名称", "新的多 Agent 任务房间");
+      if (!title) return;
+      api("/api/agenthub/task-rooms", {
+        method: "POST",
+        body: JSON.stringify({ title, participants: ["supervisor-agent"], created_by: "web-user" }),
+      })
+        .then(async (data) => {
+          state.selectedAgentHubMode = "room";
+          state.selectedAgentHubTaskRoomId = data.room?.room_id || "";
+          await loadAgentHub();
+          showToast("任务房间已创建");
+        })
+        .catch((err) => showToast(err.message));
+      return;
+    }
+    const attachButton = event.target.closest("button[data-agenthub-attach]");
+    if (attachButton) {
+      attachButton.closest(".agenthub-chat-composer")?.querySelector("input[data-agenthub-file-input]")?.click();
+      return;
+    }
+    const roomNode = event.target.closest(".agenthub-tree-node[data-agenthub-room]");
+    if (roomNode) {
+      selectAgentHubTaskRoom(roomNode.dataset.agenthubRoom || "", false);
+      return;
+    }
+    const sessionNode = event.target.closest(".agenthub-tree-node[data-agenthub-session]");
+    if (sessionNode) {
+      selectAgentHubSession(sessionNode.dataset.agenthubSession || "", false);
+      return;
+    }
+    const threadNode = event.target.closest(".agenthub-tree-node[data-agenthub-thread]");
+    if (threadNode) {
+      showToast("这个 Codex App thread 已登记展示，自动投递仍等待 app-server 绑定");
+    }
+  });
+  document.addEventListener("change", (event) => {
+    const fileInput = event.target.closest("input[data-agenthub-file-input]");
+    if (!fileInput) return;
+    const targetKey = fileInput.dataset.agenthubFileInput || "";
+    const nextFiles = [
+      ...agentHubDraftFiles(targetKey),
+      ...Array.from(fileInput.files || []).map((file) => ({
+        name: file.name,
+        size: file.size,
+        type: file.type,
+        lastModified: file.lastModified,
+        file,
+      })),
+    ];
+    state.agenthubDraftAttachments[targetKey] = nextFiles;
+    fileInput.value = "";
+    renderAgentHubSessions(state.agenthub || {});
+  });
+  document.addEventListener("input", (event) => {
+    const textarea = event.target.closest("textarea[data-agenthub-draft-input]");
+    if (!textarea) return;
+    state.agenthubDraftText[textarea.dataset.agenthubDraftInput || ""] = textarea.value;
+  });
+  document.addEventListener("submit", (event) => {
+    const chatForm = event.target.closest(".agenthub-chat-composer[data-agenthub-message-target]");
+    if (chatForm) {
+      event.preventDefault();
+      const targetId = chatForm.dataset.agenthubMessageTarget || "";
+      const mode = chatForm.dataset.agenthubMessageMode || "session";
+      const key = agentHubDraftKey(mode, targetId);
+      const session = mode === "session" ? agentHubDisplaySessions(state.agenthub || {}).find((item) => item.session_id === targetId) : null;
+      const room = mode === "room" ? (state.agenthub?.task_rooms || []).find((item) => item.room_id === targetId) : null;
+      if (mode === "session" && (!session || session.virtual)) {
+        showToast("这个入口还没有绑定可发送的 AgentHub session");
+        return;
+      }
+      if (mode === "room" && !room) {
+        showToast("这个任务房间不存在");
+        return;
+      }
+      const textarea = chatForm.querySelector("textarea[data-agenthub-draft-input]");
+      const content = (state.agenthubDraftText[key] || textarea?.value || "").trim();
+      const draftFiles = agentHubDraftFiles(key);
+      if (!content) {
+        showToast("消息不能为空");
+        return;
+      }
+      state.agenthubSending = true;
+      renderAgentHubSessions(state.agenthub || {});
+      uploadAgentHubDraftFiles(draftFiles)
+        .then((attachments) =>
+          api(
+            mode === "room"
+              ? `/api/agenthub/task-rooms/${encodeURIComponent(targetId)}/messages`
+              : `/api/agenthub/sessions/${encodeURIComponent(targetId)}/messages`,
+            {
+              method: "POST",
+              body: JSON.stringify({
+                message: content,
+                source: mode === "room" ? "task-room-web" : "web-chat-workbench",
+                attachments,
+              }),
+            }
+          )
+        )
+        .then(async () => {
+          state.agenthubDraftText[key] = "";
+          state.agenthubDraftAttachments[key] = [];
+          await loadAgentHub();
+          showToast(mode === "room" ? "任务房间消息已分发" : "消息已进入 AgentHub 队列");
+        })
+        .catch((err) => showToast(err.message))
+        .finally(() => {
+          state.agenthubSending = false;
+          renderAgentHubSessions(state.agenthub || {});
+        });
+      return;
+    }
   });
   document.addEventListener("keydown", (event) => {
     if (!["Enter", " "].includes(event.key)) return;
-    const card = event.target.closest(".agent-status-card[data-agent-id]");
-    if (!card) return;
-    event.preventDefault();
-    selectAgent(card.dataset.agentId || "", true);
+    const roomNode = event.target.closest(".agenthub-tree-node[data-agenthub-room]");
+    if (roomNode) {
+      event.preventDefault();
+      selectAgentHubTaskRoom(roomNode.dataset.agenthubRoom || "", false);
+      return;
+    }
+    const sessionNode = event.target.closest(".agenthub-tree-node[data-agenthub-session]");
+    if (sessionNode) {
+      event.preventDefault();
+      selectAgentHubSession(sessionNode.dataset.agenthubSession || "", false);
+      return;
+    }
   });
   window.addEventListener("hashchange", () => {
     const route =
