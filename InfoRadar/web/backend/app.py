@@ -93,6 +93,12 @@ COURSEMIND_BACKEND_URL = os.environ.get("COURSEMIND_BACKEND_URL", "http://100.78
 COURSEMIND_PROXY_TIMEOUT = float(os.environ.get("COURSEMIND_PROXY_TIMEOUT", "120"))
 
 app = FastAPI(title="InfoRadar Web", version="0.1.0")
+AGENTHUB_MCP_SERVER_VERSION = "0.2.0"
+AGENTHUB_MCP_NO_CACHE_HEADERS = {
+    "Cache-Control": "no-store, no-cache, must-revalidate, max-age=0",
+    "Pragma": "no-cache",
+    "Expires": "0",
+}
 
 
 class VersionedStaticFiles(StaticFiles):
@@ -3517,8 +3523,8 @@ def handle_mcp_rpc(payload: dict) -> dict | None:
                 request_id,
                 {
                     "protocolVersion": requested_version,
-                    "capabilities": {"tools": {"listChanged": False}},
-                    "serverInfo": {"name": "mana-agenthub", "version": "0.1.0"},
+                    "capabilities": {"tools": {"listChanged": True}},
+                    "serverInfo": {"name": "mana-agenthub", "version": AGENTHUB_MCP_SERVER_VERSION},
                 },
             )
         if method == "notifications/initialized":
@@ -5130,14 +5136,18 @@ def get_agenthub_hermes_current_state(request: Request) -> dict:
 
 
 @app.get("/mcp")
-def get_mcp(request: Request) -> dict:
+def get_mcp(request: Request) -> JSONResponse:
     require_agenthub_queue_access(request)
-    return {
-        "ok": True,
-        "name": "mana-agenthub",
-        "transport": "streamable-http-json-rpc",
-        "tools": [tool["name"] for tool in agenthub_mcp_tools()],
-    }
+    return JSONResponse(
+        {
+            "ok": True,
+            "name": "mana-agenthub",
+            "version": AGENTHUB_MCP_SERVER_VERSION,
+            "transport": "streamable-http-json-rpc",
+            "tools": [tool["name"] for tool in agenthub_mcp_tools()],
+        },
+        headers=AGENTHUB_MCP_NO_CACHE_HEADERS,
+    )
 
 
 @app.post("/mcp")
@@ -5150,14 +5160,14 @@ async def post_mcp(request: Request) -> Response:
     if isinstance(payload, list):
         responses = [response for item in payload if isinstance(item, dict) for response in [handle_mcp_rpc(item)] if response is not None]
         if not responses:
-            return Response(status_code=202)
-        return JSONResponse(responses)
+            return Response(status_code=202, headers=AGENTHUB_MCP_NO_CACHE_HEADERS)
+        return JSONResponse(responses, headers=AGENTHUB_MCP_NO_CACHE_HEADERS)
     if not isinstance(payload, dict):
-        return JSONResponse(mcp_error(None, -32600, "Invalid Request"), status_code=400)
+        return JSONResponse(mcp_error(None, -32600, "Invalid Request"), status_code=400, headers=AGENTHUB_MCP_NO_CACHE_HEADERS)
     response = handle_mcp_rpc(payload)
     if response is None:
-        return Response(status_code=202)
-    return JSONResponse(response)
+        return Response(status_code=202, headers=AGENTHUB_MCP_NO_CACHE_HEADERS)
+    return JSONResponse(response, headers=AGENTHUB_MCP_NO_CACHE_HEADERS)
 
 
 def add_cli_arg(args: list[str], flag: str, value: object | None) -> None:

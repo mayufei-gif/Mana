@@ -99,6 +99,17 @@ class AgentHubDispatchContractTest(unittest.TestCase):
         self.tmp.cleanup()
 
     def test_mcp_tool_registry_exposes_task_room_supervisor_and_attachment_tools(self) -> None:
+        init = backend.handle_mcp_rpc(
+            {
+                "jsonrpc": "2.0",
+                "id": 0,
+                "method": "initialize",
+                "params": {"protocolVersion": "2024-11-05", "capabilities": {}},
+            }
+        )
+        self.assertEqual(init["result"]["serverInfo"]["version"], backend.AGENTHUB_MCP_SERVER_VERSION)
+        self.assertTrue(init["result"]["capabilities"]["tools"]["listChanged"])
+
         response = backend.handle_mcp_rpc({"jsonrpc": "2.0", "id": 1, "method": "tools/list"})
         tools = response["result"]["tools"]
         names = {tool["name"] for tool in tools}
